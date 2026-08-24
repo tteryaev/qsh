@@ -62,12 +62,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let path = format_user_path(&env::current_dir()?);
 
-        let greeting = theme::format_greeting(&config.theme.greeting, &username, &path);
+        let prompt = theme::format_greeting(&config.theme.prompt, &username, &path);
 
-        print!("{}", greeting);
+        print!("{}", prompt);
 
         io::stdout().flush()?;
-        let raw_input = match input::read_input(&greeting, &history.entries) {
+        let raw_input = match input::read_input(&prompt, &history.entries) {
             Some(input) => input,
             None => continue,
         };
@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let input = alias::expand(raw_input, &aliases);
 
-        // new parser
+        //parser
 
         let tokens = parser::tokenize(&input);
 

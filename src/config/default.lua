@@ -1,3 +1,3 @@
 theme = {
-	greeting = "{current_directory}@{username} >",
+	prompt = "{current_directory}@{username} > ",
 }

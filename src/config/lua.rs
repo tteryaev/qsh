@@ -11,15 +11,15 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
 
     let globals = lua.globals();
 
-    let greeting = match globals.get::<mlua::Table>("theme") {
+    let prompt = match globals.get::<mlua::Table>("theme") {
         Ok(theme) => theme
-            .get::<String>("greeting")
-            .unwrap_or_else(|_| Config::default().theme.greeting),
+            .get::<String>("prompt")
+            .unwrap_or_else(|_| Config::default().theme.prompt),
 
-        Err(_) => Config::default().theme.greeting,
+        Err(_) => Config::default().theme.prompt,
     };
 
-    let theme = Theme { greeting };
+    let theme = Theme { prompt };
 
     let mut aliases = HashMap::new();
 

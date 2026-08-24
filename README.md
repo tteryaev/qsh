@@ -53,7 +53,7 @@ Configuration example:
 
 ```lua
 theme = {
-	greeting = "[{username}] {current_directory} -> ",
+	promt = "[{username}] {current_directory} -> ",
 }
 
 aliases = {
