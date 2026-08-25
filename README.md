@@ -1,10 +1,6 @@
 # qsh
 
-A lightweight and configurable shell written with simplicity in mind.
-
 qsh is a shell project focused on **easy configuration**, **extensibility**, and a clean user experience.
-
-### The project is currently in early development. Many planned features are not implemented yet, but qsh is actively evolving.
 
 ## Features
 
@@ -22,50 +18,7 @@ qsh is a shell project focused on **easy configuration**, **extensibility**, and
 * Customizable shell environment
 * Developer-friendly API for extensions
 
-## qpm — qsh Plugin Manager
-
-One of the main goals of qsh is a built-in plugin system.
-
-**qpm (qsh Plugin Manager)** will allow users to:
-
-* Install and manage qsh plugins
-* Extend shell functionality
-* Share custom commands and features
-* Configure qsh without modifying the source code
-
-Example of future usage:
-
-```bash
-qpm install plugin-name
-qpm remove plugin-name
-qpm list
-```
-
-*(qpm is currently planned and not available yet.)*
-
-## Configuration
-
-qsh is designed around a simple configuration approach.
-
-Configuration example:
-
-`file ~/.config/qsh/config.lua`
-
-```lua
-theme = {
-	promt = "[{username}] {current_directory} -> ",
-}
-
-aliases = {
-	c = "clear",
-	n = "nvim",
-    ll = "ls -la"
-}
-```
-
 ## Installation
-
-Currently, qsh is built from source.
 
 ```bash
 git clone https://github.com/KoTTana24/qsh
@@ -73,16 +26,12 @@ cd qsh
 cargo build --release
 ```
 
-The installation process may change in future releases.
-
 ## Development status
 
 qsh is in an early development stage.
 
 Current priorities:
 
-* [ ] Stable command execution
-* [ ] Configuration system
 * [ ] Plugin architecture
 * [ ] qpm implementation
 * [ ] Documentation
