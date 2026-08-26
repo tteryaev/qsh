@@ -20,6 +20,7 @@ use whoami;
 
 fn get_username() -> String {
     whoami::username()
+        .expect("qsh: Failed to get username")
 }
 
 fn format_user_path(full_path: &Path) -> String {
