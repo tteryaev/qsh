@@ -5,21 +5,26 @@ use crossterm::{
     ExecutableCommand,
 };
 
+use crate::config::Theme;
+
+use super::{
+    editor::Editor,
+    render,
+    highlight
+};
+
 use std::io::{self, Write};
 
 
 pub fn read_input(
     prompt: &str,
     history: &[String],
+    theme: &Theme,
 ) -> Option<String> {
 
     enable_raw_mode().unwrap();
 
-
-    let mut input: Vec<char> = Vec::new();
-
-    let mut cursor_position = 0;
-
+    let mut editor = Editor::new();
 
     let mut history_index =
         history.len();
@@ -36,112 +41,54 @@ pub fn read_input(
 
                 match key.code {
 
-
                     KeyCode::Char(c) => {
 
-                        input.insert(
-                            cursor_position,
-                            c,
-                        );
-
-
-                        cursor_position += 1;
+                        editor.insert(c);
 
                         browsing_history = false;
 
-
-                        refresh_input(
-                            prompt,
-                            &input,
-                            cursor_position,
-                        );
+                        redraw(prompt, &editor, theme);
                     }
-
 
 
                     KeyCode::Backspace => {
 
-                        if cursor_position > 0 {
+                        editor.backspace();
 
-                            cursor_position -= 1;
-
-
-                            input.remove(
-                                cursor_position
-                            );
-
-
-                            refresh_input(
-                                prompt,
-                                &input,
-                                cursor_position,
-                            );
-                        }
+                        redraw(prompt, &editor, theme);
                     }
-
 
 
                     KeyCode::Left => {
 
-                        if cursor_position > 0 {
+                        editor.move_left();
 
-                            cursor_position -= 1;
-
-
-                            move_cursor(
-                                prompt,
-                                &input,
-                                cursor_position,
-                            );
-                        }
+                        redraw(prompt, &editor, theme);
                     }
-
 
 
                     KeyCode::Right => {
 
-                        if cursor_position < input.len() {
+                        editor.move_right();
 
-                            cursor_position += 1;
-
-
-                            move_cursor(
-                                prompt,
-                                &input,
-                                cursor_position,
-                            );
-                        }
+                        redraw(prompt, &editor, theme);
                     }
-
 
 
                     KeyCode::Home => {
 
-                        cursor_position = 0;
+                        editor.move_home();
 
-
-                        move_cursor(
-                            prompt,
-                            &input,
-                            cursor_position,
-                        );
+                        redraw(prompt, &editor, theme);
                     }
-
 
 
                     KeyCode::End => {
 
-                        cursor_position =
-                            input.len();
+                        editor.move_end();
 
-
-                        move_cursor(
-                            prompt,
-                            &input,
-                            cursor_position,
-                        );
+                        redraw(prompt, &editor, theme);
                     }
-
 
 
                     KeyCode::Up => {
@@ -155,28 +102,17 @@ pub fn read_input(
 
 
                         if history_index > 0 {
-
                             history_index -= 1;
                         }
 
 
-                        input =
-                            history[history_index]
-                                .chars()
-                                .collect();
-
-
-                        cursor_position =
-                            input.len();
-
-
-                        refresh_input(
-                            prompt,
-                            &input,
-                            cursor_position,
+                        editor.set_text(
+                            &history[history_index]
                         );
-                    }
 
+
+                        redraw(prompt, &editor, theme);
+                    }
 
 
                     KeyCode::Down => {
@@ -191,78 +127,50 @@ pub fn read_input(
                             history_index += 1;
 
 
-                            input =
-                                history[history_index]
-                                    .chars()
-                                    .collect();
-
-
-                            cursor_position =
-                                input.len();
-
+                            editor.set_text(
+                                &history[history_index]
+                            );
 
                         } else {
 
-                            history_index =
-                                history.len();
+                            history_index = history.len();
 
-
-                            input.clear();
-
-                            cursor_position = 0;
+                            editor.set_text("");
                         }
 
 
-                        refresh_input(
-                            prompt,
-                            &input,
-                            cursor_position,
-                        );
+                        redraw(prompt, &editor, theme);
                     }
-
 
 
                     KeyCode::Esc => {
 
                         browsing_history = false;
 
-                        history_index =
-                            history.len();
+                        history_index = history.len();
 
 
-                        input.clear();
+                        editor.set_text("");
 
-                        cursor_position = 0;
-
-
-                        refresh_input(
-                            prompt,
-                            &input,
-                            cursor_position,
-                        );
+                        redraw(prompt, &editor, theme);
                     }
-
 
 
                     KeyCode::Enter => {
 
-                        disable_raw_mode()
-                            .unwrap();
-
+                        disable_raw_mode().unwrap();
 
                         println!();
 
 
                         return Some(
-                            input
-                                .iter()
-                                .collect()
+                            editor.text()
                         );
                     }
 
 
-
                     _ => {}
+
                 }
             }
 
@@ -341,4 +249,24 @@ fn move_cursor(
 
 
     stdout.flush().unwrap();
+}
+
+fn redraw(
+    prompt: &str,
+    editor: &Editor,
+    theme: &Theme,
+) {
+
+    let highlighted =
+        highlight::highlight(
+            &editor.text()
+        );
+
+
+    render::render_highlighted(
+        prompt,
+        &highlighted,
+        editor.cursor(),
+        theme,
+    );
 }

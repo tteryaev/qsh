@@ -1,4 +1,15 @@
 use std::env;
+use std::io::Write;
+
+pub fn exists(command: &str) -> bool {
+    matches!(
+        command,
+        "cd"
+            | "echo"
+            | "pwd"
+            | "exit"
+    )
+}
 
 pub fn execute(command: &str, args: &[String]) -> Option<bool> {
     match command {
@@ -22,10 +33,11 @@ pub fn execute(command: &str, args: &[String]) -> Option<bool> {
     }
 }
 
+
+
 fn echo(args: &[String]) {
     println!("{}", args.join(" "));
 }
-
 fn cd(args: &[String]) -> bool {
     let path = if args.is_empty() {
         match env::home_dir() {

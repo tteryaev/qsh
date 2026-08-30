@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use super::{Config, Theme};
+use super::{
+    Config,
+    Theme,
+    SyntaxTheme,
+};
 
 use mlua::Lua;
 
@@ -11,6 +15,11 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
 
     let globals = lua.globals();
 
+    let theme_table =
+        globals
+            .get::<mlua::Table>("theme")
+            .ok();
+
     let prompt = match globals.get::<mlua::Table>("theme") {
         Ok(theme) => theme
             .get::<String>("prompt")
@@ -19,7 +28,44 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
         Err(_) => Config::default().theme.prompt,
     };
 
-    let theme = Theme { prompt };
+    let syntax = match &theme_table {
+
+        Some(theme) => {
+
+            match theme.get::<mlua::Table>("syntax") {
+
+                Ok(syntax) => SyntaxTheme {
+
+                    command: syntax
+                        .get::<String>("command")
+                        .ok(),
+
+                    argument: syntax
+                        .get::<String>("argument")
+                        .ok(),
+
+                    error: syntax
+                        .get::<String>("error")
+                        .ok(),
+
+                    operator: syntax
+                        .get::<String>("operator")
+                        .ok(),
+                },
+
+
+                Err(_) => SyntaxTheme::default(),
+            }
+        }
+
+
+        None => SyntaxTheme::default(),
+    };
+
+    let theme = Theme {
+        prompt,
+        syntax,
+    };
 
     let mut aliases = HashMap::new();
 

@@ -9,21 +9,51 @@ pub struct Config {
     pub aliases: std::collections::HashMap<String, String>,
     pub plugins: Vec<String>,
 }
+#[derive(Debug, Clone)]
+pub struct SyntaxTheme {
+
+    pub command: Option<String>,
+
+    pub argument: Option<String>,
+
+    pub error: Option<String>,
+
+    pub operator: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub prompt: String,
+    pub syntax: SyntaxTheme,
 }
 impl Default for Config {
     fn default() -> Self {
         Self {
             theme: Theme {
                 prompt: "{current_directory}@{username} > ".to_string(),
+                syntax: SyntaxTheme::default(),
             },
 
             aliases: HashMap::new(),
 
             plugins: Vec::new(),
+        }
+    }
+}
+
+impl Default for SyntaxTheme {
+
+    fn default() -> Self {
+
+        Self {
+
+            command: None,
+
+            argument: None,
+
+            error: None,
+
+            operator: None,
         }
     }
 }

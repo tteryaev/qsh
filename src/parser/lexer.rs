@@ -1,4 +1,3 @@
-#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Word { value: String, expand: bool },
 

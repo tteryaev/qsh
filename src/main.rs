@@ -68,7 +68,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{}", prompt);
 
         io::stdout().flush()?;
-        let raw_input = match input::read_input(&prompt, &history.entries) {
+        let raw_input = match input::read_input(
+            &prompt,
+            &history.entries,
+            &config.theme,
+        ) {
             Some(input) => input,
             None => continue,
         };
@@ -89,6 +93,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         //parser
 
         let tokens = parser::tokenize(&input);
+
+        //println!("{:#?}", tokens);
+
+        //let highlighted = input::highlight::highlight(&input);
+
+        //println!("{:#?}", highlighted);
 
         let ast = parser::parse(&tokens);
 
