@@ -19,8 +19,7 @@ use history::History;
 use whoami;
 
 fn get_username() -> String {
-    whoami::username()
-        .expect("qsh: Failed to get username")
+    whoami::username().expect("qsh: Failed to get username")
 }
 
 fn format_user_path(full_path: &Path) -> String {
@@ -68,11 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{}", prompt);
 
         io::stdout().flush()?;
-        let raw_input = match input::read_input(
-            &prompt,
-            &history.entries,
-            &config.theme,
-        ) {
+        let raw_input = match input::read_input(&prompt, &history.entries, &config.theme) {
             Some(input) => input,
             None => continue,
         };
@@ -93,12 +88,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         //parser
 
         let tokens = parser::tokenize(&input);
-
-        //println!("{:#?}", tokens);
-
-        //let highlighted = input::highlight::highlight(&input);
-
-        //println!("{:#?}", highlighted);
 
         let ast = parser::parse(&tokens);
 

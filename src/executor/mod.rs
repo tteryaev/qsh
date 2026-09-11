@@ -1,6 +1,7 @@
 pub mod command;
 pub mod pipeline;
 pub mod redirect;
+pub mod output;
 
 use crate::parser::Statement;
 
