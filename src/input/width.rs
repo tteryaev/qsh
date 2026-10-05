@@ -10,11 +10,7 @@ fn char_width(character: char) -> usize {
         return 0;
     }
 
-    if is_wide(codepoint) {
-        2
-    } else {
-        1
-    }
+    if is_wide(codepoint) { 2 } else { 1 }
 }
 
 // These ranges cover combining marks commonly found in terminal input.

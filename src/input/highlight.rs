@@ -162,13 +162,16 @@ mod tests {
     use super::{Highlight, highlight};
 
     fn rendered_text(parts: &[Highlight]) -> String {
-        parts.iter().map(|part| match part {
-            Highlight::Command(text)
-            | Highlight::Argument(text)
-            | Highlight::Operator(text)
-            | Highlight::Error(text)
-            | Highlight::Space(text) => text.as_str(),
-        }).collect()
+        parts
+            .iter()
+            .map(|part| match part {
+                Highlight::Command(text)
+                | Highlight::Argument(text)
+                | Highlight::Operator(text)
+                | Highlight::Error(text)
+                | Highlight::Space(text) => text.as_str(),
+            })
+            .collect()
     }
 
     #[test]
@@ -187,7 +190,11 @@ mod tests {
     fn does_not_treat_operators_inside_quotes_as_operators() {
         let parts = highlight(r#"echo "a|b && c; d""#);
         assert!(matches!(parts[2], Highlight::Argument(_)));
-        assert!(!parts.iter().any(|part| matches!(part, Highlight::Operator(_))));
+        assert!(
+            !parts
+                .iter()
+                .any(|part| matches!(part, Highlight::Operator(_)))
+        );
     }
 
     #[test]

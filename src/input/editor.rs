@@ -74,16 +74,8 @@ impl Editor {
         self.buffer.len()
     }
 
-    pub fn replace_range(
-        &mut self,
-        start: usize,
-        end: usize,
-        replacement: &str,
-    ) {
-        self.buffer.splice(
-            start..end,
-            replacement.chars(),
-        );
+    pub fn replace_range(&mut self, start: usize, end: usize, replacement: &str) {
+        self.buffer.splice(start..end, replacement.chars());
 
         self.cursor = start + replacement.chars().count();
     }
@@ -105,12 +97,8 @@ impl Editor {
     pub fn replace_current_word(&mut self, replacement: &str) {
         let start = self.current_word_start();
 
-        self.buffer.splice(
-            start..self.cursor,
-            replacement.chars(),
-        );
+        self.buffer.splice(start..self.cursor, replacement.chars());
 
         self.cursor = start + replacement.chars().count();
     }
-
 }

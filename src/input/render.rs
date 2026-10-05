@@ -106,9 +106,11 @@ pub fn render_highlighted(
 
     // Restore cursor position
     stdout
-        .execute(cursor::MoveToColumn(
-            width::cursor_column(prompt, &parts_text(parts), cursor_position) as u16,
-        ))
+        .execute(cursor::MoveToColumn(width::cursor_column(
+            prompt,
+            &parts_text(parts),
+            cursor_position,
+        ) as u16))
         .unwrap();
 
     stdout.flush().unwrap();
@@ -245,9 +247,11 @@ pub fn render_with_completions(
     stdout.execute(cursor::MoveUp(rows as u16)).unwrap();
 
     stdout
-        .execute(cursor::MoveToColumn(
-            width::cursor_column(prompt, &parts_text(parts), cursor_position) as u16,
-        ))
+        .execute(cursor::MoveToColumn(width::cursor_column(
+            prompt,
+            &parts_text(parts),
+            cursor_position,
+        ) as u16))
         .unwrap();
 
     stdout.flush().unwrap();
@@ -323,9 +327,11 @@ fn render_input(prompt: &str, parts: &[Highlight], cursor_position: usize, theme
     print!("{}", Color::Default.ansi());
 
     stdout
-        .execute(cursor::MoveToColumn(
-            width::cursor_column(prompt, &parts_text(parts), cursor_position) as u16,
-        ))
+        .execute(cursor::MoveToColumn(width::cursor_column(
+            prompt,
+            &parts_text(parts),
+            cursor_position,
+        ) as u16))
         .unwrap();
 
     stdout.flush().unwrap();

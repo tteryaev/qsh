@@ -2,7 +2,6 @@ pub mod color;
 use crate::config::SyntaxTheme;
 
 pub struct Theme {
-
     pub greeting: String,
 
     pub syntax: SyntaxTheme,
