@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 
-use super::{
-    Config,
-    Theme,
-    SyntaxTheme,
-};
+use super::{CompletionTheme, Config, SyntaxTheme, Theme};
 
 use mlua::Lua;
 
@@ -15,10 +11,7 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
 
     let globals = lua.globals();
 
-    let theme_table =
-        globals
-            .get::<mlua::Table>("theme")
-            .ok();
+    let theme_table = globals.get::<mlua::Table>("theme").ok();
 
     let prompt = match globals.get::<mlua::Table>("theme") {
         Ok(theme) => theme
@@ -29,42 +22,38 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
     };
 
     let syntax = match &theme_table {
+        Some(theme) => match theme.get::<mlua::Table>("syntax") {
+            Ok(syntax) => SyntaxTheme {
+                command: syntax.get::<String>("command").ok(),
 
-        Some(theme) => {
+                argument: syntax.get::<String>("argument").ok(),
 
-            match theme.get::<mlua::Table>("syntax") {
+                error: syntax.get::<String>("error").ok(),
 
-                Ok(syntax) => SyntaxTheme {
+                operator: syntax.get::<String>("operator").ok(),
+            },
 
-                    command: syntax
-                        .get::<String>("command")
-                        .ok(),
-
-                    argument: syntax
-                        .get::<String>("argument")
-                        .ok(),
-
-                    error: syntax
-                        .get::<String>("error")
-                        .ok(),
-
-                    operator: syntax
-                        .get::<String>("operator")
-                        .ok(),
-                },
-
-
-                Err(_) => SyntaxTheme::default(),
-            }
-        }
-
+            Err(_) => SyntaxTheme::default(),
+        },
 
         None => SyntaxTheme::default(),
+    };
+
+    let completion = match &theme_table {
+        Some(theme) => match theme.get::<mlua::Table>("completion") {
+            Ok(completion) => CompletionTheme {
+                selected: completion.get::<String>("selected").ok(),
+                unselected: completion.get::<String>("unselected").ok(),
+            },
+            Err(_) => CompletionTheme::default(),
+        },
+        None => CompletionTheme::default(),
     };
 
     let theme = Theme {
         prompt,
         syntax,
+        completion,
     };
 
     let mut aliases = HashMap::new();
@@ -96,4 +85,30 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
 
         plugins,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn parses_completion_colors() {
+        let config = parse(
+            r##"
+                theme = {
+                    completion = {
+                        selected = "#ffffff",
+                        unselected = "#888888",
+                    },
+                }
+            "##,
+        )
+        .unwrap();
+
+        assert_eq!(config.theme.completion.selected.as_deref(), Some("#ffffff"));
+        assert_eq!(
+            config.theme.completion.unselected.as_deref(),
+            Some("#888888")
+        );
+    }
 }

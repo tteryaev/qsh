@@ -1,29 +1,110 @@
 use std::{
     collections::HashSet,
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
 pub fn complete(input: &str, cursor: usize) -> Vec<String> {
     let before_cursor: String = input.chars().take(cursor).collect();
 
-    let word_start = before_cursor
-        .char_indices()
-        .rev()
-        .find(|(_, ch)| ch.is_whitespace())
-        .map(|(index, ch)| index + ch.len_utf8())
-        .unwrap_or(0);
+    let word_start = current_word_start(&before_cursor);
 
     let word = &before_cursor[word_start..];
 
-    let is_command = before_cursor[..word_start].trim().is_empty();
-
-    if is_command {
+    if is_command_position(&before_cursor[..word_start]) {
         complete_command(word)
     } else {
         complete_path(word)
     }
+}
+
+fn current_word_start(input: &str) -> usize {
+    input
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| ch.is_whitespace())
+        .map(|(index, ch)| index + ch.len_utf8())
+        .unwrap_or(0)
+}
+
+fn is_command_position(input: &str) -> bool {
+    let mut command_position = true;
+    let mut quote = None;
+    let mut escape = false;
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if escape {
+            command_position = false;
+            escape = false;
+            continue;
+        }
+
+        if ch == '\\' && quote != Some('\'') {
+            escape = true;
+            continue;
+        }
+
+        if let Some(active_quote) = quote {
+            if ch == active_quote {
+                quote = None;
+            } else {
+                command_position = false;
+            }
+
+            continue;
+        }
+
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            command_position = false;
+            continue;
+        }
+
+        if ch.is_whitespace() {
+            continue;
+        }
+
+        match ch {
+            '|' => {
+                if chars.peek() == Some(&'|') {
+                    chars.next();
+                }
+
+                command_position = true;
+            }
+
+            ';' => {
+                command_position = true;
+            }
+
+            '&' => {
+                if chars.peek() == Some(&'&') {
+                    chars.next();
+                }
+
+                command_position = true;
+            }
+
+            '<' => {
+                command_position = false;
+            }
+
+            '>' => {
+                if chars.peek() == Some(&'>') {
+                    chars.next();
+                }
+
+                command_position = false;
+            }
+
+            _ => {
+                command_position = false;
+            }
+        }
+    }
+
+    command_position
 }
 
 fn complete_command(prefix: &str) -> Vec<String> {
@@ -41,7 +122,7 @@ fn complete_command(prefix: &str) -> Vec<String> {
         for entry in entries.flatten() {
             let path = entry.path();
 
-            if !path.is_file() {
+            if !is_executable_file(&path) {
                 continue;
             }
 
@@ -59,6 +140,22 @@ fn complete_command(prefix: &str) -> Vec<String> {
     commands.sort();
 
     commands
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+
+    metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
 }
 
 fn complete_path(prefix: &str) -> Vec<String> {
@@ -124,13 +221,10 @@ fn expand_home(path: &str) -> String {
         return env::var("HOME").unwrap_or_else(|_| path.to_string());
     }
 
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home)
-                .join(rest)
-                .to_string_lossy()
-                .to_string();
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Ok(home) = env::var("HOME")
+    {
+        return PathBuf::from(home).join(rest).to_string_lossy().to_string();
     }
 
     path.to_string()
@@ -150,10 +244,7 @@ pub fn common_prefix(matches: &[String]) -> String {
             .take_while(|(a, b)| a == b)
             .count();
 
-        prefix = prefix
-            .chars()
-            .take(common_length)
-            .collect();
+        prefix = prefix.chars().take(common_length).collect();
 
         if prefix.is_empty() {
             break;
@@ -161,4 +252,57 @@ pub fn common_prefix(matches: &[String]) -> String {
     }
 
     prefix
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{common_prefix, current_word_start, is_command_position};
+
+    #[test]
+    fn detects_command_position_at_line_start() {
+        assert!(is_command_position(""));
+        assert!(is_command_position("   "));
+    }
+
+    #[test]
+    fn detects_command_position_after_command_separators() {
+        assert!(is_command_position("echo hi | "));
+        assert!(is_command_position("false || "));
+        assert!(is_command_position("true && "));
+        assert!(is_command_position("pwd; "));
+        assert!(is_command_position("sleep 1 & "));
+    }
+
+    #[test]
+    fn detects_argument_position_after_command_words() {
+        assert!(!is_command_position("echo "));
+        assert!(!is_command_position("echo hi "));
+        assert!(!is_command_position("cat < "));
+        assert!(!is_command_position("echo > "));
+    }
+
+    #[test]
+    fn ignores_operators_inside_quotes() {
+        assert!(!is_command_position("echo \"|\" "));
+        assert!(!is_command_position("echo ';' "));
+    }
+
+    #[test]
+    fn finds_current_word_start_as_byte_index() {
+        let input = "echo hello";
+        let start = current_word_start(input);
+
+        assert_eq!(&input[start..], "hello");
+    }
+
+    #[test]
+    fn finds_common_prefix() {
+        let matches = vec![
+            "foobar".to_string(),
+            "foobaz".to_string(),
+            "fooqux".to_string(),
+        ];
+
+        assert_eq!(common_prefix(&matches), "foo");
+    }
 }

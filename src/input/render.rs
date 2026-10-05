@@ -1,16 +1,13 @@
 use std::io::{self, Write};
 
 use crossterm::{
-    cursor,
+    ExecutableCommand, cursor,
     terminal::{self, Clear, ClearType},
-    ExecutableCommand,
 };
 
-use crate::{
-    config::Theme, input, theme::color::Color,
-};
+use crate::{config::Theme, theme::color::Color};
 
-use crate::input::render;
+use crate::input::{render, width};
 
 use super::highlight::Highlight;
 
@@ -20,9 +17,7 @@ fn clear_completions(
     completion_lines: &mut usize,
 ) {
     if *completion_lines > 0 {
-        render::clear_completion_lines(
-            *completion_lines,
-        );
+        render::clear_completion_lines(*completion_lines);
 
         *completion_lines = 0;
     }
@@ -39,25 +34,40 @@ pub fn clear_completion_lines(lines: usize) {
     let mut stdout = io::stdout();
 
     // Move to the first completion line.
-    stdout
-        .execute(cursor::MoveDown(1))
-        .unwrap();
+    stdout.execute(cursor::MoveDown(1)).unwrap();
+
+    // The input cursor may be in the middle of the line. Start clearing from
+    // the beginning so no part of the first completion row is left behind.
+    stdout.execute(cursor::MoveToColumn(0)).unwrap();
 
     // Clear everything below the input line.
-    stdout
-        .execute(Clear(ClearType::FromCursorDown))
-        .unwrap();
+    stdout.execute(Clear(ClearType::FromCursorDown)).unwrap();
 
     // Return to the input line.
-    stdout
-        .execute(cursor::MoveUp(1))
-        .unwrap();
+    stdout.execute(cursor::MoveUp(1)).unwrap();
 
-    stdout
-        .execute(cursor::MoveToColumn(0))
-        .unwrap();
+    stdout.execute(cursor::MoveToColumn(0)).unwrap();
 
     stdout.flush().unwrap();
+}
+
+fn completion_window(
+    total_rows: usize,
+    available_rows: usize,
+    selected_row: Option<usize>,
+) -> (usize, usize) {
+    let rows = total_rows.min(available_rows);
+
+    if rows == 0 {
+        return (0, 0);
+    }
+
+    let max_offset = total_rows - rows;
+    let selected_offset = selected_row
+        .map(|row| row.min(total_rows - 1).saturating_sub(rows - 1))
+        .unwrap_or(0);
+
+    (selected_offset.min(max_offset), rows)
 }
 
 pub fn render_highlighted(
@@ -66,155 +76,59 @@ pub fn render_highlighted(
     cursor_position: usize,
     theme: &Theme,
 ) {
-
     let mut stdout = io::stdout();
 
-
     // Move to the beginning of the line and clear it
-    stdout
-        .execute(
-            cursor::MoveToColumn(0)
-        )
-        .unwrap();
-
+    stdout.execute(cursor::MoveToColumn(0)).unwrap();
 
     print!("\x1b[2K");
-
 
     print!("{}", prompt);
 
     for part in parts {
+        let (text, color) = match part {
+            Highlight::Command(text) => (text, Color::from_option(&theme.syntax.command)),
 
-        let (text, color) =
-            match part {
+            Highlight::Argument(text) => (text, Color::from_option(&theme.syntax.argument)),
 
-                Highlight::Command(text) => {
+            Highlight::Operator(text) => (text, Color::from_option(&theme.syntax.operator)),
 
-                    (
-                        text,
-                        Color::from_option(
-                            &theme.syntax.command
-                        )
-                    )
-                }
+            Highlight::Error(text) => (text, Color::from_option(&theme.syntax.error)),
 
+            Highlight::Space(text) => (text, Color::Default),
+        };
 
-                Highlight::Argument(text) => {
-
-                    (
-                        text,
-                        Color::from_option(
-                            &theme.syntax.argument
-                        )
-                    )
-                }
-
-
-                Highlight::Operator(text) => {
-
-                    (
-                        text,
-                        Color::from_option(
-                            &theme.syntax.operator
-                        )
-                    )
-                }
-
-
-                Highlight::Error(text) => {
-
-                    (
-                        text,
-                        Color::from_option(
-                            &theme.syntax.error
-                        )
-                    )
-                }
-
-                Highlight::Space(text) => {
-
-                    (
-                        text,
-                        Color::Default
-                    )
-                }
-
-            };
-
-
-        print!(
-            "{}{}",
-            color.ansi(),
-            text
-        );
+        print!("{}{}", color.ansi(), text);
     }
 
-
-
     // Reset terminal color
-    print!(
-        "{}",
-        Color::Default.ansi()
-    );
-
-
+    print!("{}", Color::Default.ansi());
 
     // Restore cursor position
     stdout
-        .execute(
-            cursor::MoveToColumn(
-                (
-                    prompt.len()
-                        + cursor_position
-                ) as u16
-            )
-        )
+        .execute(cursor::MoveToColumn(
+            width::cursor_column(prompt, &parts_text(parts), cursor_position) as u16,
+        ))
         .unwrap();
-
 
     stdout.flush().unwrap();
 }
 
-
-
-pub fn render_plain(
-    prompt: &str,
-    text: &str,
-    cursor_position: usize,
-) {
-
+pub fn render_plain(prompt: &str, text: &str, cursor_position: usize) {
     let mut stdout = io::stdout();
 
-
     // Move to the beginning of the line and clear it
-    stdout
-        .execute(
-            cursor::MoveToColumn(0)
-        )
-        .unwrap();
-
+    stdout.execute(cursor::MoveToColumn(0)).unwrap();
 
     print!("\x1b[2K");
 
-
-    print!(
-        "{}{}",
-        prompt,
-        text
-    );
-
+    print!("{}{}", prompt, text);
 
     stdout
-        .execute(
-            cursor::MoveToColumn(
-                (
-                    prompt.len()
-                        + cursor_position
-                ) as u16
-            )
-        )
+        .execute(cursor::MoveToColumn(
+            width::cursor_column(prompt, text, cursor_position) as u16,
+        ))
         .unwrap();
-
 
     stdout.flush().unwrap();
 }
@@ -226,12 +140,7 @@ pub fn render_completions(
     theme: &Theme,
     completions: &[String],
 ) {
-    render_highlighted(
-        prompt,
-        parts,
-        cursor_position,
-        theme,
-    );
+    render_highlighted(prompt, parts, cursor_position, theme);
 
     print!("\r\n");
 
@@ -246,12 +155,7 @@ pub fn render_completions(
     print!("\r\n");
 
     // Redraw the input after the completion list.
-    render_highlighted(
-        prompt,
-        parts,
-        cursor_position,
-        theme,
-    );
+    render_highlighted(prompt, parts, cursor_position, theme);
 }
 
 pub fn render_with_completions(
@@ -260,26 +164,19 @@ pub fn render_with_completions(
     cursor_position: usize,
     theme: &Theme,
     completions: &[String],
+    selected_index: Option<usize>,
 ) -> usize {
     let mut stdout = io::stdout();
 
-    render_input(
-        prompt,
-        parts,
-        cursor_position,
-        theme,
-    );
+    render_input(prompt, parts, cursor_position, theme);
 
-    let (terminal_width, terminal_height) =
-        terminal::size().unwrap_or((80, 24));
+    let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
 
-    let (_, cursor_row) =
-        cursor::position().unwrap_or((0, 0));
+    let (_, cursor_row) = cursor::position().unwrap_or((0, 0));
 
     // Keep one line as a safety margin so that
     // the completion menu never causes terminal scrolling.
-    let available_rows = terminal_height
-        .saturating_sub(cursor_row + 2) as usize;
+    let available_rows = terminal_height.saturating_sub(cursor_row + 2) as usize;
 
     if available_rows == 0 {
         stdout.flush().unwrap();
@@ -288,21 +185,18 @@ pub fn render_with_completions(
 
     let column_width = completions
         .iter()
-        .map(|completion| completion.chars().count())
+        .map(|completion| width::display_width(completion))
         .max()
         .unwrap_or(1)
         + 4;
 
-    let columns = std::cmp::max(
-        1,
-        terminal_width as usize / column_width,
-    );
+    let columns = std::cmp::max(1, terminal_width as usize / column_width);
 
-    let total_rows =
-        completions.len().div_ceil(columns);
+    let total_rows = completions.len().div_ceil(columns);
 
-    // Only show rows that fit on the screen.
-    let rows = total_rows.min(available_rows);
+    // Keep the selected row visible when the menu is taller than the screen.
+    let selected_row = selected_index.map(|index| index / columns);
+    let (scroll_offset, rows) = completion_window(total_rows, available_rows, selected_row);
 
     if rows == 0 {
         stdout.flush().unwrap();
@@ -313,7 +207,7 @@ pub fn render_with_completions(
 
     for row in 0..rows {
         for column in 0..columns {
-            let index = row * columns + column;
+            let index = (scroll_offset + row) * columns + column;
 
             if index >= completions.len() {
                 break;
@@ -321,15 +215,24 @@ pub fn render_with_completions(
 
             let completion = &completions[index];
 
-            print!("{}", completion);
+            if selected_index == Some(index) {
+                if theme.completion.selected.is_some() {
+                    let color = Color::from_option(&theme.completion.selected);
+                    print!("{}{}{}", color.ansi(), completion, Color::Default.ansi());
+                } else {
+                    print!("\x1b[7m{}\x1b[27m", completion);
+                }
+            } else {
+                let color = Color::from_option(&theme.completion.unselected);
+                print!("{}{}{}", color.ansi(), completion, Color::Default.ansi());
+            }
 
             if column + 1 < columns {
-                let width = completion.chars().count();
+                let width = width::display_width(completion);
 
-                let padding =
-                    column_width.saturating_sub(width);
+                let padding = column_width.saturating_sub(width);
 
-                print!("{:width$}", "");
+                print!("{:padding$}", "");
             }
         }
 
@@ -339,13 +242,11 @@ pub fn render_with_completions(
     }
 
     // Return to the input line.
-    stdout
-        .execute(cursor::MoveUp(rows as u16))
-        .unwrap();
+    stdout.execute(cursor::MoveUp(rows as u16)).unwrap();
 
     stdout
         .execute(cursor::MoveToColumn(
-            (prompt.len() + cursor_position) as u16,
+            width::cursor_column(prompt, &parts_text(parts), cursor_position) as u16,
         ))
         .unwrap();
 
@@ -354,17 +255,31 @@ pub fn render_with_completions(
     rows
 }
 
-fn render_input(
-    prompt: &str,
-    parts: &[Highlight],
-    cursor_position: usize,
-    theme: &Theme,
-) {
+#[cfg(test)]
+mod tests {
+    use super::completion_window;
+
+    #[test]
+    fn completion_window_starts_at_the_first_row_without_selection() {
+        assert_eq!(completion_window(6, 3, None), (0, 3));
+    }
+
+    #[test]
+    fn completion_window_scrolls_to_the_selected_row() {
+        assert_eq!(completion_window(6, 3, Some(4)), (2, 3));
+        assert_eq!(completion_window(6, 3, Some(5)), (3, 3));
+    }
+
+    #[test]
+    fn completion_window_does_not_scroll_past_the_end() {
+        assert_eq!(completion_window(2, 5, Some(1)), (0, 2));
+    }
+}
+
+fn render_input(prompt: &str, parts: &[Highlight], cursor_position: usize, theme: &Theme) {
     let mut stdout = io::stdout();
 
-    stdout
-        .execute(cursor::MoveToColumn(0))
-        .unwrap();
+    stdout.execute(cursor::MoveToColumn(0)).unwrap();
 
     print!("\x1b[2K");
     print!("{}", prompt);
@@ -374,10 +289,7 @@ fn render_input(
             Highlight::Command(text) => {
                 print!(
                     "{}{}",
-                    Color::from_option(
-                        &theme.syntax.command
-                    )
-                        .ansi(),
+                    Color::from_option(&theme.syntax.command).ansi(),
                     text
                 );
             }
@@ -385,10 +297,7 @@ fn render_input(
             Highlight::Argument(text) => {
                 print!(
                     "{}{}",
-                    Color::from_option(
-                        &theme.syntax.argument
-                    )
-                        .ansi(),
+                    Color::from_option(&theme.syntax.argument).ansi(),
                     text
                 );
             }
@@ -396,23 +305,13 @@ fn render_input(
             Highlight::Operator(text) => {
                 print!(
                     "{}{}",
-                    Color::from_option(
-                        &theme.syntax.operator
-                    )
-                        .ansi(),
+                    Color::from_option(&theme.syntax.operator).ansi(),
                     text
                 );
             }
 
             Highlight::Error(text) => {
-                print!(
-                    "{}{}",
-                    Color::from_option(
-                        &theme.syntax.error
-                    )
-                        .ansi(),
-                    text
-                );
+                print!("{}{}", Color::from_option(&theme.syntax.error).ansi(), text);
             }
 
             Highlight::Space(text) => {
@@ -424,14 +323,23 @@ fn render_input(
     print!("{}", Color::Default.ansi());
 
     stdout
-        .execute(
-            cursor::MoveToColumn(
-                (prompt.len() + cursor_position) as u16
-            )
-        )
+        .execute(cursor::MoveToColumn(
+            width::cursor_column(prompt, &parts_text(parts), cursor_position) as u16,
+        ))
         .unwrap();
 
     stdout.flush().unwrap();
 }
 
-
+fn parts_text(parts: &[Highlight]) -> String {
+    parts
+        .iter()
+        .map(|part| match part {
+            Highlight::Command(text)
+            | Highlight::Argument(text)
+            | Highlight::Operator(text)
+            | Highlight::Error(text)
+            | Highlight::Space(text) => text.as_str(),
+        })
+        .collect()
+}

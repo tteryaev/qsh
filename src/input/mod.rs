@@ -3,6 +3,7 @@ pub mod render;
 pub mod reader;
 pub mod highlight;
 pub mod completion;
+pub mod width;
 
 pub use editor::Editor;
 pub use reader::read_input;
