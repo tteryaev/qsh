@@ -21,6 +21,18 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
         Err(_) => Config::default().theme.prompt,
     };
 
+    let prompt_colors = theme_table
+        .as_ref()
+        .and_then(|theme| theme.get::<mlua::Table>("prompt_colors").ok())
+        .map(read_string_table)
+        .unwrap_or_default();
+
+    let widgets = theme_table
+        .as_ref()
+        .and_then(|theme| theme.get::<mlua::Table>("widgets").ok())
+        .map(read_string_table)
+        .unwrap_or_default();
+
     let syntax = match &theme_table {
         Some(theme) => match theme.get::<mlua::Table>("syntax") {
             Ok(syntax) => SyntaxTheme {
@@ -44,6 +56,7 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
             Ok(completion) => CompletionTheme {
                 selected: completion.get::<String>("selected").ok(),
                 unselected: completion.get::<String>("unselected").ok(),
+                history: completion.get::<String>("history").ok(),
             },
             Err(_) => CompletionTheme::default(),
         },
@@ -52,6 +65,8 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
 
     let theme = Theme {
         prompt,
+        prompt_colors,
+        widgets,
         syntax,
         completion,
     };
@@ -87,6 +102,13 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
     })
 }
 
+fn read_string_table(table: mlua::Table) -> HashMap<String, String> {
+    table
+        .pairs::<String, String>()
+        .filter_map(Result::ok)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse;
@@ -99,6 +121,7 @@ mod tests {
                     completion = {
                         selected = "#ffffff",
                         unselected = "#888888",
+                        history = "#666666",
                     },
                 }
             "##,
@@ -110,5 +133,6 @@ mod tests {
             config.theme.completion.unselected.as_deref(),
             Some("#888888")
         );
+        assert_eq!(config.theme.completion.history.as_deref(), Some("#666666"));
     }
 }

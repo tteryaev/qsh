@@ -1,6 +1,23 @@
 /// Returns the number of terminal columns occupied by `text`.
 pub fn display_width(text: &str) -> usize {
-    text.chars().map(char_width).sum()
+    let mut width = 0;
+    let mut chars = text.chars().peekable();
+
+    while let Some(character) = chars.next() {
+        if character == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for code in chars.by_ref() {
+                if ('@'..='~').contains(&code) {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        width += char_width(character);
+    }
+
+    width
 }
 
 fn char_width(character: char) -> usize {

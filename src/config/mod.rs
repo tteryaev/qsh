@@ -21,11 +21,14 @@ pub struct SyntaxTheme {
 pub struct CompletionTheme {
     pub selected: Option<String>,
     pub unselected: Option<String>,
+    pub history: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub prompt: String,
+    pub prompt_colors: HashMap<String, String>,
+    pub widgets: HashMap<String, String>,
     pub syntax: SyntaxTheme,
     pub completion: CompletionTheme,
 }
@@ -34,6 +37,8 @@ impl Default for Config {
         Self {
             theme: Theme {
                 prompt: "{current_directory}@{username} > ".to_string(),
+                prompt_colors: HashMap::new(),
+                widgets: HashMap::new(),
                 syntax: SyntaxTheme::default(),
                 completion: CompletionTheme::default(),
             },
@@ -61,6 +66,7 @@ impl Default for CompletionTheme {
         Self {
             selected: None,
             unselected: None,
+            history: None,
         }
     }
 }

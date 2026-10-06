@@ -9,9 +9,16 @@ pub struct History {
 
 impl History {
     pub fn new() -> Self {
-        Self {
-            entries: Self::load(),
+        let mut entries = Self::load();
+        let original_len = entries.len();
+
+        remove_consecutive_duplicates(&mut entries);
+
+        if entries.len() != original_len {
+            let _ = fs::write(Self::path(), entries.join("\n"));
         }
+
+        Self { entries }
     }
 
     fn path() -> PathBuf {
@@ -33,8 +40,47 @@ impl History {
             return;
         }
 
+        if self.entries.last().is_some_and(|last| last == command) {
+            return;
+        }
+
         self.entries.push(command.to_string());
 
         let _ = fs::write(Self::path(), self.entries.join("\n"));
+    }
+}
+
+fn remove_consecutive_duplicates(entries: &mut Vec<String>) {
+    entries.dedup();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_consecutive_duplicates;
+
+    #[test]
+    fn removes_only_consecutive_duplicates() {
+        let mut entries = vec![
+            "clear".to_string(),
+            "clear".to_string(),
+            "fastfetch".to_string(),
+            "fastfetch".to_string(),
+            "firefox".to_string(),
+            "firefox".to_string(),
+            "firefox".to_string(),
+            "clear".to_string(),
+        ];
+
+        remove_consecutive_duplicates(&mut entries);
+
+        assert_eq!(
+            entries,
+            vec![
+                "clear".to_string(),
+                "fastfetch".to_string(),
+                "firefox".to_string(),
+                "clear".to_string(),
+            ]
+        );
     }
 }

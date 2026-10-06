@@ -76,14 +76,20 @@ pub fn render_highlighted(
     cursor_position: usize,
     theme: &Theme,
 ) {
+    render_highlighted_with_suggestion(prompt, parts, cursor_position, theme, None);
+}
+
+pub fn render_highlighted_with_suggestion(
+    prompt: &str,
+    parts: &[Highlight],
+    cursor_position: usize,
+    theme: &Theme,
+    suggestion: Option<&str>,
+) {
     let mut stdout = io::stdout();
 
-    // Move to the beginning of the line and clear it
-    stdout.execute(cursor::MoveToColumn(0)).unwrap();
-
-    print!("\x1b[2K");
-
-    print!("{}", prompt);
+    begin_prompt_redraw(&mut stdout, prompt);
+    print_prompt(prompt);
 
     for part in parts {
         let (text, color) = match part {
@@ -101,12 +107,21 @@ pub fn render_highlighted(
         print!("{}{}", color.ansi(), text);
     }
 
+    if let Some(suggestion) = suggestion {
+        let color = match theme.completion.history {
+            Some(_) => Color::from_option(&theme.completion.history).ansi(),
+            None => "\x1b[90m".to_string(),
+        };
+
+        print!("{}{}{}", color, suggestion, Color::Default.ansi());
+    }
+
     // Reset terminal color
     print!("{}", Color::Default.ansi());
 
     // Restore cursor position
     stdout
-        .execute(cursor::MoveToColumn(width::cursor_column(
+        .execute(cursor::MoveToColumn(input_cursor_column(
             prompt,
             &parts_text(parts),
             cursor_position,
@@ -119,16 +134,13 @@ pub fn render_highlighted(
 pub fn render_plain(prompt: &str, text: &str, cursor_position: usize) {
     let mut stdout = io::stdout();
 
-    // Move to the beginning of the line and clear it
-    stdout.execute(cursor::MoveToColumn(0)).unwrap();
-
-    print!("\x1b[2K");
-
-    print!("{}{}", prompt, text);
+    begin_prompt_redraw(&mut stdout, prompt);
+    print_prompt(prompt);
+    print!("{}", text);
 
     stdout
         .execute(cursor::MoveToColumn(
-            width::cursor_column(prompt, text, cursor_position) as u16,
+            input_cursor_column(prompt, text, cursor_position) as u16,
         ))
         .unwrap();
 
@@ -283,10 +295,8 @@ mod tests {
 fn render_input(prompt: &str, parts: &[Highlight], cursor_position: usize, theme: &Theme) {
     let mut stdout = io::stdout();
 
-    stdout.execute(cursor::MoveToColumn(0)).unwrap();
-
-    print!("\x1b[2K");
-    print!("{}", prompt);
+    begin_prompt_redraw(&mut stdout, prompt);
+    print_prompt(prompt);
 
     for part in parts {
         match part {
@@ -327,7 +337,7 @@ fn render_input(prompt: &str, parts: &[Highlight], cursor_position: usize, theme
     print!("{}", Color::Default.ansi());
 
     stdout
-        .execute(cursor::MoveToColumn(width::cursor_column(
+        .execute(cursor::MoveToColumn(input_cursor_column(
             prompt,
             &parts_text(parts),
             cursor_position,
@@ -335,6 +345,34 @@ fn render_input(prompt: &str, parts: &[Highlight], cursor_position: usize, theme
         .unwrap();
 
     stdout.flush().unwrap();
+}
+
+fn begin_prompt_redraw(stdout: &mut io::Stdout, prompt: &str) {
+    let prompt_lines = prompt.bytes().filter(|byte| *byte == b'\n').count();
+
+    if prompt_lines > 0 {
+        stdout
+            .execute(cursor::MoveUp(prompt_lines.min(u16::MAX as usize) as u16))
+            .unwrap();
+    }
+
+    stdout.execute(cursor::MoveToColumn(0)).unwrap();
+    stdout.execute(Clear(ClearType::FromCursorDown)).unwrap();
+}
+
+fn print_prompt(prompt: &str) {
+    // Raw mode does not translate LF to CRLF, so normalize prompt newlines
+    // to keep every prompt line anchored at column zero.
+    let normalized = prompt.replace("\r\n", "\n").replace('\n', "\r\n");
+    print!("{}", normalized);
+}
+
+fn input_cursor_column(prompt: &str, text: &str, cursor_position: usize) -> usize {
+    let final_prompt_line = prompt.rsplit('\n').next().unwrap_or(prompt);
+    let final_prompt_line = final_prompt_line
+        .strip_suffix('\r')
+        .unwrap_or(final_prompt_line);
+    width::cursor_column(final_prompt_line, text, cursor_position)
 }
 
 fn parts_text(parts: &[Highlight]) -> String {

@@ -13,6 +13,10 @@ pub enum Highlight {
 /// for execution, but not for an editor, so highlighting scans source text and
 /// only uses the decoded word to decide its color.
 pub fn highlight(input: &str) -> Vec<Highlight> {
+    highlight_with_aliases(input, &HashMap::new())
+}
+
+pub fn highlight_with_aliases(input: &str, aliases: &HashMap<String, String>) -> Vec<Highlight> {
     let mut result = Vec::new();
     let mut word = String::new();
     let mut quote = None;
@@ -48,7 +52,7 @@ pub fn highlight(input: &str) -> Vec<Highlight> {
         }
 
         if character.is_whitespace() {
-            push_word(&mut result, &mut word, &mut expect_command);
+            push_word(&mut result, &mut word, &mut expect_command, aliases);
 
             let mut spaces = character.to_string();
             while chars.peek().is_some_and(|next| next.is_whitespace()) {
@@ -83,7 +87,7 @@ pub fn highlight(input: &str) -> Vec<Highlight> {
         };
 
         if let Some(operator) = operator {
-            push_word(&mut result, &mut word, &mut expect_command);
+            push_word(&mut result, &mut word, &mut expect_command, aliases);
             result.push(Highlight::Operator(operator.to_string()));
             expect_command = matches!(operator, "|" | "||" | ";" | "&" | "&&");
         } else {
@@ -91,11 +95,16 @@ pub fn highlight(input: &str) -> Vec<Highlight> {
         }
     }
 
-    push_word(&mut result, &mut word, &mut expect_command);
+    push_word(&mut result, &mut word, &mut expect_command, aliases);
     result
 }
 
-fn push_word(result: &mut Vec<Highlight>, word: &mut String, expect_command: &mut bool) {
+fn push_word(
+    result: &mut Vec<Highlight>,
+    word: &mut String,
+    expect_command: &mut bool,
+    aliases: &HashMap<String, String>,
+) {
     if word.is_empty() {
         return;
     }
@@ -103,7 +112,7 @@ fn push_word(result: &mut Vec<Highlight>, word: &mut String, expect_command: &mu
     let source = std::mem::take(word);
 
     if *expect_command {
-        if is_command(&unquote(&source)) {
+        if is_command(&unquote(&source), aliases) {
             result.push(Highlight::Command(source));
         } else {
             result.push(Highlight::Error(source));
@@ -148,8 +157,9 @@ fn unquote(source: &str) -> String {
     value
 }
 
-fn is_command(command: &str) -> bool {
-    crate::builtin::exists(command)
+fn is_command(command: &str, aliases: &HashMap<String, String>) -> bool {
+    aliases.contains_key(command)
+        || crate::builtin::exists(command)
         || std::env::var_os("PATH")
             .unwrap_or_default()
             .to_string_lossy()
@@ -159,7 +169,9 @@ fn is_command(command: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Highlight, highlight};
+    use std::collections::HashMap;
+
+    use super::{Highlight, highlight, highlight_with_aliases};
 
     fn rendered_text(parts: &[Highlight]) -> String {
         parts
@@ -203,4 +215,13 @@ mod tests {
         assert!(matches!(parts[0], Highlight::Command(_)));
         assert!(matches!(parts[6], Highlight::Command(_)));
     }
+
+    #[test]
+    fn recognizes_aliases_as_commands() {
+        let aliases = HashMap::from([(String::from("ll"), String::from("ls -l"))]);
+        let parts = highlight_with_aliases("ll /tmp", &aliases);
+
+        assert!(matches!(parts[0], Highlight::Command(_)));
+    }
 }
+use std::collections::HashMap;

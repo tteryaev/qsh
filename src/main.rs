@@ -62,12 +62,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let path = format_user_path(&env::current_dir()?);
 
-        let prompt = theme::format_greeting(&config.theme.prompt, &username, &path);
+        let prompt = theme::format_greeting(
+            &config.theme.prompt,
+            &username,
+            &path,
+            &config.theme.widgets,
+            &config.theme.prompt_colors,
+        );
 
         print!("{}", prompt);
 
         io::stdout().flush()?;
-        let raw_input = match input::read_input(&prompt, &history.entries, &config.theme) {
+        let raw_input = match input::read_input(&prompt, &history.entries, &config.theme, &aliases)
+        {
             Some(input) => input,
             None => continue,
         };

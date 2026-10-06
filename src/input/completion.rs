@@ -142,6 +142,22 @@ fn complete_command(prefix: &str) -> Vec<String> {
     commands
 }
 
+pub fn command_exists(command: &str) -> bool {
+    if crate::builtin::exists(command) {
+        return true;
+    }
+
+    if command.contains(std::path::MAIN_SEPARATOR) {
+        return is_executable_file(Path::new(command));
+    }
+
+    let Some(path) = env::var_os("PATH") else {
+        return false;
+    };
+
+    env::split_paths(&path).any(|directory| is_executable_file(&directory.join(command)))
+}
+
 #[cfg(unix)]
 fn is_executable_file(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
