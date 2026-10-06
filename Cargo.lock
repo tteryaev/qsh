@@ -406,6 +406,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "glob",
+ "libc",
  "mlua",
  "whoami",
 ]

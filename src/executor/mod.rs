@@ -1,4 +1,5 @@
 pub mod command;
+pub mod output;
 pub mod pipeline;
 pub mod redirect;
 

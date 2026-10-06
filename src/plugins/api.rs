@@ -64,63 +64,32 @@ pub fn register(lua: &Lua, context: Arc<Mutex<PluginContext>>) -> Result<()> {
 
     let before_context = context.clone();
 
+    let before_command = lua.create_function(move |lua, callback: mlua::Function| {
+        let key = lua.create_registry_value(callback)?;
 
-    let before_command =
-        lua.create_function(
-            move |lua, callback: mlua::Function| {
+        before_context
+            .lock()
+            .unwrap()
+            .events
+            .before_command
+            .push(key);
 
-                let key =
-                    lua.create_registry_value(
-                        callback
-                    )?;
-
-
-                before_context
-                    .lock()
-                    .unwrap()
-                    .events
-                    .before_command
-                    .push(key);
-
-
-                Ok(())
-            }
-        )?;
+        Ok(())
+    })?;
 
     let after_context = context.clone();
 
+    let after_command = lua.create_function(move |lua, callback: mlua::Function| {
+        let key = lua.create_registry_value(callback)?;
 
-    let after_command =
-        lua.create_function(
-            move |lua, callback: mlua::Function| {
+        after_context.lock().unwrap().events.after_command.push(key);
 
-                let key =
-                    lua.create_registry_value(callback)?;
+        Ok(())
+    })?;
 
+    event.set("after_command", after_command)?;
 
-                after_context
-                    .lock()
-                    .unwrap()
-                    .events
-                    .after_command
-                    .push(key);
-
-
-                Ok(())
-            }
-        )?;
-
-
-    event.set(
-        "after_command",
-        after_command,
-    )?;
-
-
-    event.set(
-        "before_command",
-        before_command,
-    )?;
+    event.set("before_command", before_command)?;
 
     //
     // Global API table

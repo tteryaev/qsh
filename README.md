@@ -37,6 +37,31 @@ Current priorities:
 * [ ] Documentation
 * [ ] First stable release
 
+## Prompt widgets and colors
+
+Prompt placeholders can be colored independently. Custom prompt widgets can be
+provided as strings and use the same color map:
+
+```lua
+theme = {
+    prompt = "{current_directory}@{username} {time} {project} > ",
+    prompt_colors = {
+        current_directory = "#5fafaf",
+        username = "#d787ff",
+        project = "#87d75f",
+        time = "#808080",
+    },
+    widgets = {
+        project = "qsh",
+    },
+}
+```
+
+Built-in placeholders are `{username}`, `{current_directory}`, and `{time}`.
+The time widget displays local time in `HH:MM:SS` format. Any key in
+`theme.widgets` can be used as a custom placeholder, and its color is selected
+by the matching key in `theme.prompt_colors`.
+
 ## Contributing
 
 Contributions, ideas, and feedback are welcome!

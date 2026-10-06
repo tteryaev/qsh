@@ -1,20 +1,12 @@
-use mlua::{
-    Function,
-    Lua,
-    RegistryKey,
-};
-
+use mlua::{Function, Lua, RegistryKey};
 
 pub struct Events {
-
     pub on_start: Vec<RegistryKey>,
 
     pub before_command: Vec<RegistryKey>,
 
     pub after_command: Vec<RegistryKey>,
 }
-
-
 
 impl Events {
     pub fn new() -> Self {
@@ -27,65 +19,37 @@ impl Events {
         }
     }
 
-
-    pub fn run_on_start(
-        &self,
-        lua: &Lua,
-    ) {
+    pub fn run_on_start(&self, lua: &Lua) {
         for key in &self.on_start {
-            let callback =
-                match lua.registry_value::<Function>(key)
-                {
-                    Ok(callback) => callback,
+            let callback = match lua.registry_value::<Function>(key) {
+                Ok(callback) => callback,
 
-                    Err(error) => {
-                        eprintln!(
-                            "plugin error: {}",
-                            error
-                        );
+                Err(error) => {
+                    eprintln!("plugin error: {}", error);
 
-                        continue;
-                    }
-                };
+                    continue;
+                }
+            };
 
-
-            if let Err(error) =
-                callback.call::<()>(())
-            {
-                eprintln!(
-                    "plugin error: {}",
-                    error
-                );
+            if let Err(error) = callback.call::<()>(()) {
+                eprintln!("plugin error: {}", error);
             }
         }
     }
 
-
-    pub fn run_before_command(
-        &self,
-        lua: &Lua,
-        command: String,
-    ) -> bool {
+    pub fn run_before_command(&self, lua: &Lua, command: String) -> bool {
         for key in &self.before_command {
-            let callback =
-                match lua.registry_value::<Function>(key)
-                {
-                    Ok(callback) => callback,
+            let callback = match lua.registry_value::<Function>(key) {
+                Ok(callback) => callback,
 
-                    Err(error) => {
-                        eprintln!(
-                            "plugin error: {}",
-                            error
-                        );
+                Err(error) => {
+                    eprintln!("plugin error: {}", error);
 
-                        continue;
-                    }
-                };
+                    continue;
+                }
+            };
 
-
-            match callback.call::<bool>(
-                command.clone()
-            ) {
+            match callback.call::<bool>(command.clone()) {
                 Ok(result) => {
                     if !result {
                         return false;
@@ -93,35 +57,18 @@ impl Events {
                 }
 
                 Err(error) => {
-                    eprintln!(
-                        "plugin error: {}",
-                        error
-                    );
+                    eprintln!("plugin error: {}", error);
                 }
             }
         }
 
-
         true
     }
 
-    pub fn run_after_command(
-        &self,
-        lua: &Lua,
-        command: String,
-        success: bool,
-    ) {
+    pub fn run_after_command(&self, lua: &Lua, command: String, success: bool) {
         for key in &self.after_command {
-            if let Ok(callback) =
-                lua.registry_value::<Function>(key)
-            {
-                let _ =
-                    callback.call::<()>(
-                        (
-                            command.clone(),
-                            success,
-                        )
-                    );
+            if let Ok(callback) = lua.registry_value::<Function>(key) {
+                let _ = callback.call::<()>((command.clone(), success));
             }
         }
     }

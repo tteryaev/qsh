@@ -19,8 +19,7 @@ use history::History;
 use whoami;
 
 fn get_username() -> String {
-    whoami::username()
-        .expect("qsh: Failed to get username")
+    whoami::username().expect("qsh: Failed to get username")
 }
 
 fn format_user_path(full_path: &Path) -> String {
@@ -63,12 +62,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let path = format_user_path(&env::current_dir()?);
 
-        let prompt = theme::format_greeting(&config.theme.prompt, &username, &path);
+        let prompt = theme::format_greeting(
+            &config.theme.prompt,
+            &username,
+            &path,
+            &config.theme.widgets,
+            &config.theme.prompt_colors,
+        );
 
         print!("{}", prompt);
 
         io::stdout().flush()?;
-        let raw_input = match input::read_input(&prompt, &history.entries) {
+        let raw_input = match input::read_input(&prompt, &history.entries, &config.theme, &aliases)
+        {
             Some(input) => input,
             None => continue,
         };
