@@ -62,6 +62,50 @@ The time widget displays local time in `HH:MM:SS` format. Any key in
 `theme.widgets` can be used as a custom placeholder, and its color is selected
 by the matching key in `theme.prompt_colors`.
 
+## Key bindings
+
+`break_line` cancels the current input and starts a fresh prompt. `clear_line`
+empties the current input. Both actions can be rebound in the top-level
+`binds` table:
+
+```lua
+binds = {
+    break_line = "ctrl+c",
+    clear_line = "ctrl+u",
+    exit = "ctrl+d",
+    clear_screen = "ctrl+l",
+    move_start = "ctrl+a",
+    move_end = "ctrl+e",
+    delete_word_backward = "ctrl+w",
+    delete_to_end = "ctrl+k",
+    history_search = "ctrl+r",
+}
+```
+
+`exit` leaves qsh immediately, and `clear_screen` clears the terminal while
+keeping the current input. `move_start` and `move_end` move to the start or end
+of the input. `delete_word_backward` removes the previous word, and
+`delete_to_end` removes text from the cursor to the end. Bindings accept key
+names such as `esc`, `enter`,
+`tab`, `up`, `left`, and
+modifier combinations such as `ctrl+c` or `alt+left`. The default `clear_line`
+binding is Ctrl+U; set it to `ctrl+c` for fish-style Ctrl+C behavior.
+`history_search` searches by the command name at the start of each history
+entry and lets you cycle through matching commands.
+
+Custom bindings use the key combination as the table key and a Lua function as
+the value. The function receives a `line` table; update `text` and `cursor` to
+change the input:
+
+```lua
+binds["ctrl+alt+u"] = function(line)
+    line.text = string.upper(line.text)
+    line.cursor = utf8.len(line.text)
+end
+```
+
+The cursor position is a character index, not a UTF-8 byte offset.
+
 ## Contributing
 
 Contributions, ideas, and feedback are welcome!

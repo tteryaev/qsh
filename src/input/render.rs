@@ -131,6 +131,30 @@ pub fn render_highlighted_with_suggestion(
     stdout.flush().unwrap();
 }
 
+pub fn render_history_search(
+    prompt: &str,
+    parts: &[Highlight],
+    cursor_position: usize,
+    theme: &Theme,
+    query: &str,
+    candidate: Option<&str>,
+) {
+    render_highlighted(prompt, parts, cursor_position, theme);
+
+    let mut stdout = io::stdout();
+    let (column, _) = cursor::position().unwrap_or((0, 0));
+
+    print!("\r\n\x1b[90msearch command: {}", query);
+    if let Some(candidate) = candidate {
+        print!(" → {}", candidate);
+    }
+    print!("\x1b[39m\x1b[K");
+
+    stdout.execute(cursor::MoveUp(1)).unwrap();
+    stdout.execute(cursor::MoveToColumn(column)).unwrap();
+    stdout.flush().unwrap();
+}
+
 pub fn render_plain(prompt: &str, text: &str, cursor_position: usize) {
     let mut stdout = io::stdout();
 

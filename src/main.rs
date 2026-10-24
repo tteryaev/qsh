@@ -15,6 +15,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use history::History;
+use input::reader::InputResult;
 
 use whoami;
 
@@ -37,6 +38,8 @@ fn format_user_path(full_path: &Path) -> String {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ignore_sigint_in_shell();
+
     let config = config::load_config();
 
     let mut history = History::new();
@@ -73,10 +76,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{}", prompt);
 
         io::stdout().flush()?;
-        let raw_input = match input::read_input(&prompt, &history.entries, &config.theme, &aliases)
-        {
-            Some(input) => input,
-            None => continue,
+        let raw_input = match input::read_input(
+            &prompt,
+            &history.entries,
+            &config.theme,
+            &aliases,
+            &config.binds,
+            &config.custom_binds,
+            &config.lua,
+        ) {
+            InputResult::Submit(input) => input,
+            InputResult::BreakLine => continue,
+            InputResult::Exit => break,
         };
 
         let raw_input = raw_input.trim();
@@ -104,4 +115,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn ignore_sigint_in_shell() {
+    // External children restore SIGINT to its default disposition before exec.
+    unsafe {
+        libc::signal(libc::SIGINT, libc::SIG_IGN);
+    }
 }

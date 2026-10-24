@@ -52,6 +52,25 @@ impl Editor {
         self.cursor = self.buffer.len();
     }
 
+    pub fn delete_word_backward(&mut self) {
+        let mut start = self.cursor;
+
+        while start > 0 && self.buffer[start - 1].is_whitespace() {
+            start -= 1;
+        }
+
+        while start > 0 && !self.buffer[start - 1].is_whitespace() {
+            start -= 1;
+        }
+
+        self.buffer.drain(start..self.cursor);
+        self.cursor = start;
+    }
+
+    pub fn delete_to_end(&mut self) {
+        self.buffer.truncate(self.cursor);
+    }
+
     // Replace current text
     pub fn set_text(&mut self, text: &str) {
         self.buffer = text.chars().collect();
@@ -67,6 +86,10 @@ impl Editor {
     // Get cursor position
     pub fn cursor(&self) -> usize {
         self.cursor
+    }
+
+    pub fn set_cursor(&mut self, position: usize) {
+        self.cursor = position.min(self.buffer.len());
     }
 
     // Get buffer length

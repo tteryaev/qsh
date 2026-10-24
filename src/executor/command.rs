@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::process::Command;
 
 use crate::builtin;
@@ -45,6 +47,14 @@ pub fn execute(command: ShellCommand, plugins: &PluginManager) -> bool {
     let mut process = Command::new(&command.program);
 
     process.args(&command.args);
+
+    #[cfg(unix)]
+    unsafe {
+        process.pre_exec(|| {
+            libc::signal(libc::SIGINT, libc::SIG_DFL);
+            Ok(())
+        });
+    }
 
     redirect::apply_stdin(&mut process, command.stdin);
 

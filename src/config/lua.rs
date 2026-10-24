@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
-use super::{CompletionTheme, Config, SyntaxTheme, Theme};
+use super::{CompletionTheme, Config, CustomBind, SyntaxTheme, Theme};
 
-use mlua::Lua;
+use mlua::{Lua, Value};
 
 pub fn parse(code: &str) -> Result<Config, mlua::Error> {
     let lua = Lua::new();
+    let defaults = Config::default();
 
     lua.load(code).exec()?;
 
@@ -16,9 +17,9 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
     let prompt = match globals.get::<mlua::Table>("theme") {
         Ok(theme) => theme
             .get::<String>("prompt")
-            .unwrap_or_else(|_| Config::default().theme.prompt),
+            .unwrap_or_else(|_| defaults.theme.prompt.clone()),
 
-        Err(_) => Config::default().theme.prompt,
+        Err(_) => defaults.theme.prompt.clone(),
     };
 
     let prompt_colors = theme_table
@@ -81,6 +82,30 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
         }
     }
 
+    let mut binds = defaults.binds.clone();
+    let mut custom_binds = Vec::new();
+    if let Ok(table) = globals.get::<mlua::Table>("binds") {
+        for pair in table.pairs::<String, Value>() {
+            let Ok((name, value)) = pair else {
+                continue;
+            };
+
+            match value {
+                Value::String(key) => {
+                    binds.insert(name, key.to_str()?.to_string());
+                }
+                Value::Function(callback) => {
+                    let callback = lua.create_registry_value(callback)?;
+                    custom_binds.push(CustomBind {
+                        key: name,
+                        callback,
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
     let mut plugins = Vec::new();
 
     if let Ok(table) = globals.get::<mlua::Table>("plugins") {
@@ -97,6 +122,12 @@ pub fn parse(code: &str) -> Result<Config, mlua::Error> {
         theme,
 
         aliases,
+
+        binds,
+
+        custom_binds,
+
+        lua,
 
         plugins,
     })
