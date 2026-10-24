@@ -1,4 +1,6 @@
 use super::redirect;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 
 use crate::parser::Command as ShellCommand;
@@ -12,6 +14,14 @@ pub fn execute(commands: Vec<ShellCommand>) -> bool {
         let mut process = Command::new(&command.program);
 
         process.args(&command.args);
+
+        #[cfg(unix)]
+        unsafe {
+            process.pre_exec(|| {
+                libc::signal(libc::SIGINT, libc::SIG_DFL);
+                Ok(())
+            });
+        }
 
         if let Some(stdout) = previous_stdout.take() {
             process.stdin(Stdio::from(stdout));

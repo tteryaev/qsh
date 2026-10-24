@@ -1,13 +1,21 @@
 pub mod lua;
 use lua::parse;
+use mlua::{Lua, RegistryKey};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone)]
 pub struct Config {
     pub theme: Theme,
     pub aliases: std::collections::HashMap<String, String>,
+    pub binds: HashMap<String, String>,
+    pub custom_binds: Vec<CustomBind>,
+    pub lua: Lua,
     pub plugins: Vec<String>,
+}
+
+pub struct CustomBind {
+    pub key: String,
+    pub callback: RegistryKey,
 }
 #[derive(Debug, Clone)]
 pub struct SyntaxTheme {
@@ -44,6 +52,19 @@ impl Default for Config {
             },
 
             aliases: HashMap::new(),
+            binds: HashMap::from([
+                ("break_line".to_string(), "ctrl+c".to_string()),
+                ("clear_line".to_string(), "ctrl+u".to_string()),
+                ("exit".to_string(), "ctrl+d".to_string()),
+                ("clear_screen".to_string(), "ctrl+l".to_string()),
+                ("move_start".to_string(), "ctrl+a".to_string()),
+                ("move_end".to_string(), "ctrl+e".to_string()),
+                ("delete_word_backward".to_string(), "ctrl+w".to_string()),
+                ("delete_to_end".to_string(), "ctrl+k".to_string()),
+                ("history_search".to_string(), "ctrl+r".to_string()),
+            ]),
+            custom_binds: Vec::new(),
+            lua: Lua::new(),
 
             plugins: Vec::new(),
         }

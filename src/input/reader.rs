@@ -1,10 +1,11 @@
 use crossterm::{
     ExecutableCommand, cursor,
-    event::{self, Event, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode},
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
 };
+use mlua::{Function, Lua};
 
-use crate::config::Theme;
+use crate::config::{CustomBind, Theme};
 
 use super::{completion, editor::Editor, highlight, render, width};
 
@@ -17,6 +18,65 @@ struct CompletionState {
     word_start: usize,
     word_end: usize,
     word: String,
+}
+
+pub enum InputResult {
+    Submit(String),
+    BreakLine,
+    Exit,
+}
+
+struct HistorySearch {
+    query: String,
+    matches: Vec<String>,
+    selected_index: usize,
+}
+
+impl HistorySearch {
+    fn new(history: &[String]) -> Self {
+        let mut search = Self {
+            query: String::new(),
+            matches: Vec::new(),
+            selected_index: 0,
+        };
+        search.update_matches(history);
+        search
+    }
+
+    fn update_matches(&mut self, history: &[String]) {
+        self.matches = history
+            .iter()
+            .rev()
+            .filter(|entry| {
+                entry
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|command| command.starts_with(&self.query))
+            })
+            .cloned()
+            .collect();
+        self.selected_index = 0;
+    }
+
+    fn selected(&self) -> Option<&str> {
+        self.matches.get(self.selected_index).map(String::as_str)
+    }
+
+    fn older(&mut self) {
+        if !self.matches.is_empty() {
+            self.selected_index = (self.selected_index + 1) % self.matches.len();
+        }
+    }
+
+    fn newer(&mut self) {
+        if !self.matches.is_empty() {
+            self.selected_index = if self.selected_index == 0 {
+                self.matches.len() - 1
+            } else {
+                self.selected_index - 1
+            };
+        }
+    }
 }
 
 impl CompletionState {
@@ -78,7 +138,10 @@ pub fn read_input(
     history: &[String],
     theme: &Theme,
     aliases: &HashMap<String, String>,
-) -> Option<String> {
+    binds: &HashMap<String, String>,
+    custom_binds: &[CustomBind],
+    lua: &Lua,
+) -> InputResult {
     enable_raw_mode().unwrap();
 
     let mut editor = Editor::new();
@@ -90,9 +153,248 @@ pub fn read_input(
 
     let mut completion_state: Option<CompletionState> = None;
     let mut completion_lines = 0usize;
+    let mut history_search: Option<HistorySearch> = None;
 
     loop {
         match event::read().unwrap() {
+            Event::Key(key)
+                if custom_binds
+                    .iter()
+                    .any(|binding| key_matches_binding(key, &binding.key)) =>
+            {
+                clear_completions(&mut completion_state, &mut completion_lines);
+
+                let binding = custom_binds
+                    .iter()
+                    .find(|binding| key_matches_binding(key, &binding.key))
+                    .unwrap();
+
+                if let Err(error) = apply_custom_bind(lua, binding, &mut editor) {
+                    eprintln!("qsh: custom bind error: {error}");
+                }
+
+                browsing_history = false;
+                history_suggestion_dismissed = false;
+                redraw(
+                    prompt,
+                    &editor,
+                    theme,
+                    history,
+                    history_suggestion_dismissed,
+                    aliases,
+                );
+            }
+
+            Event::Key(key) if bound_action(key, binds) == Some("break_line") => {
+                clear_completion_lines(&mut completion_lines);
+                history_suggestion_dismissed = true;
+                editor.move_end();
+                redraw(
+                    prompt,
+                    &editor,
+                    theme,
+                    history,
+                    history_suggestion_dismissed,
+                    aliases,
+                );
+                disable_raw_mode().unwrap();
+                println!();
+                return InputResult::BreakLine;
+            }
+
+            Event::Key(key) if bound_action(key, binds) == Some("clear_line") => {
+                clear_completions(&mut completion_state, &mut completion_lines);
+                editor.set_text("");
+                browsing_history = false;
+                history_index = history.len();
+                history_suggestion_dismissed = false;
+                redraw(
+                    prompt,
+                    &editor,
+                    theme,
+                    history,
+                    history_suggestion_dismissed,
+                    aliases,
+                );
+            }
+
+            Event::Key(key) if bound_action(key, binds) == Some("exit") => {
+                clear_completion_lines(&mut completion_lines);
+                history_suggestion_dismissed = true;
+                editor.move_end();
+                redraw(
+                    prompt,
+                    &editor,
+                    theme,
+                    history,
+                    history_suggestion_dismissed,
+                    aliases,
+                );
+                disable_raw_mode().unwrap();
+                println!();
+                return InputResult::Exit;
+            }
+
+            Event::Key(key) if bound_action(key, binds) == Some("clear_screen") => {
+                completion_state = None;
+                completion_lines = 0;
+
+                let mut stdout = io::stdout();
+                stdout.execute(Clear(ClearType::All)).unwrap();
+                stdout.execute(cursor::MoveTo(0, 0)).unwrap();
+
+                redraw(
+                    prompt,
+                    &editor,
+                    theme,
+                    history,
+                    history_suggestion_dismissed,
+                    aliases,
+                );
+            }
+
+            Event::Key(key) if bound_action(key, binds) == Some("move_start") => {
+                clear_completions(&mut completion_state, &mut completion_lines);
+                editor.move_home();
+                history_suggestion_dismissed = true;
+                redraw(
+                    prompt,
+                    &editor,
+                    theme,
+                    history,
+                    history_suggestion_dismissed,
+                    aliases,
+                );
+            }
+
+            Event::Key(key) if bound_action(key, binds) == Some("move_end") => {
+                clear_completions(&mut completion_state, &mut completion_lines);
+                editor.move_end();
+                history_suggestion_dismissed = false;
+                redraw(
+                    prompt,
+                    &editor,
+                    theme,
+                    history,
+                    history_suggestion_dismissed,
+                    aliases,
+                );
+            }
+
+            Event::Key(key) if bound_action(key, binds) == Some("delete_word_backward") => {
+                clear_completions(&mut completion_state, &mut completion_lines);
+                editor.delete_word_backward();
+                browsing_history = false;
+                history_suggestion_dismissed = false;
+                redraw(
+                    prompt,
+                    &editor,
+                    theme,
+                    history,
+                    history_suggestion_dismissed,
+                    aliases,
+                );
+            }
+
+            Event::Key(key) if bound_action(key, binds) == Some("delete_to_end") => {
+                clear_completions(&mut completion_state, &mut completion_lines);
+                editor.delete_to_end();
+                browsing_history = false;
+                history_suggestion_dismissed = false;
+                redraw(
+                    prompt,
+                    &editor,
+                    theme,
+                    history,
+                    history_suggestion_dismissed,
+                    aliases,
+                );
+            }
+
+            Event::Key(key) if history_search.is_some() => {
+                let search = history_search.as_mut().unwrap();
+
+                if bound_action(key, binds) == Some("history_search") {
+                    search.older();
+                } else {
+                    match key.code {
+                        KeyCode::Up => search.older(),
+                        KeyCode::Down => search.newer(),
+                        KeyCode::Char(character) if !character.is_whitespace() => {
+                            search.query.push(character);
+                            search.update_matches(history);
+                        }
+                        KeyCode::Backspace => {
+                            search.query.pop();
+                            search.update_matches(history);
+                        }
+                        KeyCode::Enter => {
+                            if let Some(candidate) = search.selected().map(str::to_string) {
+                                editor.set_text(&candidate);
+                                history_suggestion_dismissed = true;
+                                browsing_history = false;
+                                history_index = history.len();
+                            }
+
+                            history_search = None;
+                            clear_completion_lines(&mut completion_lines);
+                            redraw(
+                                prompt,
+                                &editor,
+                                theme,
+                                history,
+                                history_suggestion_dismissed,
+                                aliases,
+                            );
+                            continue;
+                        }
+                        KeyCode::Esc => {
+                            history_search = None;
+                            clear_completion_lines(&mut completion_lines);
+                            redraw(
+                                prompt,
+                                &editor,
+                                theme,
+                                history,
+                                history_suggestion_dismissed,
+                                aliases,
+                            );
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+
+                if let Some(search) = history_search.as_ref() {
+                    let parts = highlight::highlight_with_aliases(&editor.text(), aliases);
+                    render::render_history_search(
+                        prompt,
+                        &parts,
+                        editor.cursor(),
+                        theme,
+                        &search.query,
+                        search.selected(),
+                    );
+                    completion_lines = 1;
+                }
+            }
+
+            Event::Key(key) if bound_action(key, binds) == Some("history_search") => {
+                clear_completions(&mut completion_state, &mut completion_lines);
+                history_search = Some(HistorySearch::new(history));
+                let search = history_search.as_ref().unwrap();
+                let parts = highlight::highlight_with_aliases(&editor.text(), aliases);
+                render::render_history_search(
+                    prompt,
+                    &parts,
+                    editor.cursor(),
+                    theme,
+                    &search.query,
+                    search.selected(),
+                );
+                completion_lines = 1;
+            }
+
             Event::Key(key) => match key.code {
                 KeyCode::Char(c) => {
                     clear_completions(&mut completion_state, &mut completion_lines);
@@ -502,7 +804,7 @@ pub fn read_input(
 
                     println!();
 
-                    return Some(editor.text());
+                    return InputResult::Submit(editor.text());
                 }
                 _ => {}
             },
@@ -510,6 +812,70 @@ pub fn read_input(
             _ => {}
         }
     }
+}
+
+fn apply_custom_bind(lua: &Lua, bind: &CustomBind, editor: &mut Editor) -> mlua::Result<()> {
+    let callback: Function = lua.registry_value(&bind.callback)?;
+    let line = lua.create_table()?;
+    line.set("text", editor.text())?;
+    line.set("cursor", editor.cursor())?;
+
+    callback.call::<()>(line.clone())?;
+
+    let text = line.get::<String>("text")?;
+    let cursor = line
+        .get::<usize>("cursor")
+        .unwrap_or_else(|_| text.chars().count());
+
+    editor.set_text(&text);
+    editor.set_cursor(cursor);
+    Ok(())
+}
+
+fn bound_action<'a>(key: KeyEvent, binds: &'a HashMap<String, String>) -> Option<&'a str> {
+    binds
+        .iter()
+        .find(|(_, binding)| key_matches_binding(key, binding))
+        .map(|(action, _)| action.as_str())
+}
+
+fn key_matches_binding(key: KeyEvent, binding: &str) -> bool {
+    let mut modifiers = KeyModifiers::empty();
+    let mut key_name = None;
+
+    for part in binding.split('+') {
+        let normalized = part.to_ascii_lowercase();
+        match normalized.as_str() {
+            "ctrl" | "control" => modifiers |= KeyModifiers::CONTROL,
+            "alt" => modifiers |= KeyModifiers::ALT,
+            "shift" => modifiers |= KeyModifiers::SHIFT,
+            _ => key_name = Some(normalized),
+        }
+    }
+
+    let Some(name) = key_name else {
+        return false;
+    };
+
+    let code_matches = match name.as_str() {
+        "esc" | "escape" => key.code == KeyCode::Esc,
+        "enter" | "return" => key.code == KeyCode::Enter,
+        "tab" => key.code == KeyCode::Tab,
+        "backspace" => key.code == KeyCode::Backspace,
+        "delete" => key.code == KeyCode::Delete,
+        "up" => key.code == KeyCode::Up,
+        "down" => key.code == KeyCode::Down,
+        "left" => key.code == KeyCode::Left,
+        "right" => key.code == KeyCode::Right,
+        "home" => key.code == KeyCode::Home,
+        "end" => key.code == KeyCode::End,
+        character if character.chars().count() == 1 => {
+            key.code == KeyCode::Char(character.chars().next().unwrap())
+        }
+        _ => false,
+    };
+
+    code_matches && key.modifiers == modifiers
 }
 
 fn refresh_input(prompt: &str, input: &[char], cursor_position: usize) {
