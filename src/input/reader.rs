@@ -1,11 +1,17 @@
 use crossterm::{
     ExecutableCommand, cursor,
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
+    event::{
+        self, Event, KeyCode, KeyEvent, KeyModifiers, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
+    terminal::{
+        Clear, ClearType, disable_raw_mode, enable_raw_mode, supports_keyboard_enhancement,
+    },
 };
 use mlua::{Function, Lua};
 
 use crate::config::{CustomBind, Theme};
+use crate::parser::{self, lexer};
 
 use super::{completion, editor::Editor, highlight, render, width};
 
@@ -143,8 +149,19 @@ pub fn read_input(
     lua: &Lua,
 ) -> InputResult {
     enable_raw_mode().unwrap();
+    let keyboard_enhanced = matches!(supports_keyboard_enhancement(), Ok(true));
+    if keyboard_enhanced {
+        io::stdout()
+            .execute(PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES,
+            ))
+            .unwrap();
+    }
 
     let mut editor = Editor::new();
+    let (input_start_column, _) = cursor::position().unwrap_or((0, 0));
+    editor.set_input_start_column(input_start_column as usize);
 
     let mut history_index = history.len();
 
@@ -197,7 +214,7 @@ pub fn read_input(
                     history_suggestion_dismissed,
                     aliases,
                 );
-                disable_raw_mode().unwrap();
+                leave_input_mode(keyboard_enhanced);
                 println!();
                 return InputResult::BreakLine;
             }
@@ -230,7 +247,7 @@ pub fn read_input(
                     history_suggestion_dismissed,
                     aliases,
                 );
-                disable_raw_mode().unwrap();
+                leave_input_mode(keyboard_enhanced);
                 println!();
                 return InputResult::Exit;
             }
@@ -242,6 +259,10 @@ pub fn read_input(
                 let mut stdout = io::stdout();
                 stdout.execute(Clear(ClearType::All)).unwrap();
                 stdout.execute(cursor::MoveTo(0, 0)).unwrap();
+                render::render_prompt(prompt);
+                let (input_start_column, _) = cursor::position().unwrap_or((0, 0));
+                editor.set_input_start_column(input_start_column as usize);
+                editor.set_rendered_cursor_row(0);
 
                 redraw(
                     prompt,
@@ -374,7 +395,14 @@ pub fn read_input(
                         theme,
                         &search.query,
                         search.selected(),
+                        editor.input_start_column(),
+                        editor.rendered_cursor_row(),
                     );
+                    editor.set_rendered_cursor_row(render::input_cursor_row(
+                        &editor.text(),
+                        editor.cursor(),
+                        editor.input_start_column(),
+                    ));
                     completion_lines = 1;
                 }
             }
@@ -391,11 +419,32 @@ pub fn read_input(
                     theme,
                     &search.query,
                     search.selected(),
+                    editor.input_start_column(),
+                    editor.rendered_cursor_row(),
                 );
+                editor.set_rendered_cursor_row(render::input_cursor_row(
+                    &editor.text(),
+                    editor.cursor(),
+                    editor.input_start_column(),
+                ));
                 completion_lines = 1;
             }
 
             Event::Key(key) => match key.code {
+                KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    clear_completions(&mut completion_state, &mut completion_lines);
+                    history_suggestion_dismissed = true;
+                    editor.insert('\n');
+                    redraw(
+                        prompt,
+                        &editor,
+                        theme,
+                        history,
+                        history_suggestion_dismissed,
+                        aliases,
+                    );
+                }
+
                 KeyCode::Char(c) => {
                     clear_completions(&mut completion_state, &mut completion_lines);
                     history_suggestion_dismissed = false;
@@ -437,7 +486,6 @@ pub fn read_input(
                     {
                         if let Some(state) = completion_state.as_mut() {
                             state.select_previous();
-                            clear_completion_lines(&mut completion_lines);
                             completion_lines = render_completion_menu(
                                 prompt,
                                 &editor,
@@ -445,6 +493,7 @@ pub fn read_input(
                                 &state.matches,
                                 state.selected_index,
                                 aliases,
+                                editor.input_start_column(),
                             );
                         }
 
@@ -473,7 +522,6 @@ pub fn read_input(
                     {
                         if let Some(state) = completion_state.as_mut() {
                             state.select_next();
-                            clear_completion_lines(&mut completion_lines);
                             completion_lines = render_completion_menu(
                                 prompt,
                                 &editor,
@@ -481,6 +529,7 @@ pub fn read_input(
                                 &state.matches,
                                 state.selected_index,
                                 aliases,
+                                editor.input_start_column(),
                             );
                         }
 
@@ -559,7 +608,6 @@ pub fn read_input(
                     {
                         if let Some(state) = completion_state.as_mut() {
                             state.select_previous();
-                            clear_completion_lines(&mut completion_lines);
                             completion_lines = render_completion_menu(
                                 prompt,
                                 &editor,
@@ -567,6 +615,7 @@ pub fn read_input(
                                 &state.matches,
                                 state.selected_index,
                                 aliases,
+                                editor.input_start_column(),
                             );
                         }
 
@@ -605,7 +654,6 @@ pub fn read_input(
                     {
                         if let Some(state) = completion_state.as_mut() {
                             state.select_next();
-                            clear_completion_lines(&mut completion_lines);
                             completion_lines = render_completion_menu(
                                 prompt,
                                 &editor,
@@ -613,6 +661,7 @@ pub fn read_input(
                                 &state.matches,
                                 state.selected_index,
                                 aliases,
+                                editor.input_start_column(),
                             );
                         }
 
@@ -701,7 +750,6 @@ pub fn read_input(
                     {
                         if let Some(state) = completion_state.as_mut() {
                             state.select_next();
-                            clear_completion_lines(&mut completion_lines);
                             completion_lines = render_completion_menu(
                                 prompt,
                                 &editor,
@@ -709,6 +757,7 @@ pub fn read_input(
                                 &state.matches,
                                 state.selected_index,
                                 aliases,
+                                editor.input_start_column(),
                             );
                         }
 
@@ -767,6 +816,7 @@ pub fn read_input(
                         &completion_state.as_ref().unwrap().matches,
                         completion_state.as_ref().unwrap().selected_index,
                         aliases,
+                        editor.input_start_column(),
                     );
                 }
 
@@ -789,18 +839,40 @@ pub fn read_input(
                         continue;
                     }
 
+                    let input = editor.text();
+                    let parse_result = parser::parse(&lexer::tokenize(&input));
+                    if lexer::has_line_continuation(&input)
+                        || lexer::has_unclosed_quote(&input)
+                        || matches!(parse_result, Err(parser::parser::ParseError::Incomplete))
+                    {
+                        clear_completions(&mut completion_state, &mut completion_lines);
+                        history_suggestion_dismissed = true;
+                        editor.insert('\n');
+                        redraw(
+                            prompt,
+                            &editor,
+                            theme,
+                            history,
+                            history_suggestion_dismissed,
+                            aliases,
+                        );
+                        continue;
+                    }
+
                     clear_completion_lines(&mut completion_lines);
                     history_suggestion_dismissed = true;
-                    redraw(
-                        prompt,
-                        &editor,
-                        theme,
-                        history,
-                        history_suggestion_dismissed,
-                        aliases,
-                    );
+                    if !input.is_empty() {
+                        redraw(
+                            prompt,
+                            &editor,
+                            theme,
+                            history,
+                            history_suggestion_dismissed,
+                            aliases,
+                        );
+                    }
 
-                    disable_raw_mode().unwrap();
+                    leave_input_mode(keyboard_enhanced);
 
                     println!();
 
@@ -812,6 +884,13 @@ pub fn read_input(
             _ => {}
         }
     }
+}
+
+fn leave_input_mode(keyboard_enhanced: bool) {
+    if keyboard_enhanced {
+        io::stdout().execute(PopKeyboardEnhancementFlags).unwrap();
+    }
+    disable_raw_mode().unwrap();
 }
 
 fn apply_custom_bind(lua: &Lua, bind: &CustomBind, editor: &mut Editor) -> mlua::Result<()> {
@@ -925,17 +1004,27 @@ fn render_completion_menu(
     matches: &[String],
     selected_index: Option<usize>,
     aliases: &HashMap<String, String>,
+    input_start_column: usize,
 ) -> usize {
     let highlighted = highlight::highlight_with_aliases(&editor.text(), aliases);
+    let previous_cursor_row = editor.rendered_cursor_row();
 
-    render::render_with_completions(
+    let rows = render::render_with_completions(
         prompt,
         &highlighted,
         editor.cursor(),
         theme,
         matches,
         selected_index,
-    )
+        input_start_column,
+        previous_cursor_row,
+    );
+    editor.set_rendered_cursor_row(render::input_cursor_row(
+        &editor.text(),
+        editor.cursor(),
+        input_start_column,
+    ));
+    rows
 }
 
 fn editor_word(editor: &Editor, start: usize, end: usize) -> String {
@@ -1003,6 +1092,7 @@ fn redraw(
     let text = editor.text();
     let highlighted = highlight::highlight_with_aliases(&text, aliases);
     let suggestion = history_suggestion(history, editor, history_suggestion_dismissed, aliases);
+    let previous_cursor_row = editor.rendered_cursor_row();
 
     render::render_highlighted_with_suggestion(
         prompt,
@@ -1010,7 +1100,14 @@ fn redraw(
         editor.cursor(),
         theme,
         suggestion.as_deref(),
+        editor.input_start_column(),
+        previous_cursor_row,
     );
+    editor.set_rendered_cursor_row(render::input_cursor_row(
+        &text,
+        editor.cursor(),
+        editor.input_start_column(),
+    ));
 }
 
 #[cfg(test)]

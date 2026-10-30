@@ -107,10 +107,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let tokens = parser::tokenize(&input);
 
-        let ast = parser::parse(&tokens);
-
-        if let Some(ref ast) = ast {
-            executor::execute(ast.clone(), &plugin_manager);
+        match parser::parse(&tokens) {
+            Ok(Some(ast)) => {
+                executor::execute(ast, &plugin_manager);
+            }
+            Ok(None) => {}
+            Err(parser::parser::ParseError::Incomplete) => {
+                eprintln!("qsh: incomplete input");
+            }
+            Err(parser::parser::ParseError::Syntax(error)) => {
+                eprintln!("qsh: syntax error: {error}");
+            }
         }
     }
 

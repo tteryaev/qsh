@@ -106,6 +106,25 @@ end
 
 The cursor position is a character index, not a UTF-8 byte offset.
 
+## Shell control flow and multiline input
+
+Conditionals use `if`, `elif`, `else`, and `end`. The condition ends at `then`;
+no semicolon is needed before it:
+
+```sh
+if test -d src then
+    echo "source directory found"
+elif test -d .git then
+    echo "repository found"
+else
+    echo "no project directory"
+end
+```
+
+Lines beginning with `#` are comments. Press Shift+Enter to insert a newline
+while editing. Enter also continues an incomplete conditional or quote. A
+backslash at the end of a line joins the next line into the same command.
+
 ## Contributing
 
 Contributions, ideas, and feedback are welcome!

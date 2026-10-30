@@ -1,6 +1,10 @@
+use std::cell::Cell;
+
 pub struct Editor {
     buffer: Vec<char>,
     cursor: usize,
+    input_start_column: usize,
+    rendered_cursor_row: Cell<usize>,
 }
 
 impl Editor {
@@ -9,6 +13,8 @@ impl Editor {
         Self {
             buffer: Vec::new(),
             cursor: 0,
+            input_start_column: 0,
+            rendered_cursor_row: Cell::new(0),
         }
     }
 
@@ -86,6 +92,22 @@ impl Editor {
     // Get cursor position
     pub fn cursor(&self) -> usize {
         self.cursor
+    }
+
+    pub fn set_input_start_column(&mut self, column: usize) {
+        self.input_start_column = column;
+    }
+
+    pub fn input_start_column(&self) -> usize {
+        self.input_start_column
+    }
+
+    pub fn rendered_cursor_row(&self) -> usize {
+        self.rendered_cursor_row.get()
+    }
+
+    pub fn set_rendered_cursor_row(&self, row: usize) {
+        self.rendered_cursor_row.set(row);
     }
 
     pub fn set_cursor(&mut self, position: usize) {

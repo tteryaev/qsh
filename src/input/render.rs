@@ -75,21 +75,34 @@ pub fn render_highlighted(
     parts: &[Highlight],
     cursor_position: usize,
     theme: &Theme,
+    input_start_column: usize,
+    previous_cursor_row: usize,
 ) {
-    render_highlighted_with_suggestion(prompt, parts, cursor_position, theme, None);
+    render_highlighted_with_suggestion(
+        prompt,
+        parts,
+        cursor_position,
+        theme,
+        None,
+        input_start_column,
+        previous_cursor_row,
+    );
 }
 
 pub fn render_highlighted_with_suggestion(
-    prompt: &str,
+    _prompt: &str,
     parts: &[Highlight],
     cursor_position: usize,
     theme: &Theme,
     suggestion: Option<&str>,
+    input_start_column: usize,
+    previous_cursor_row: usize,
 ) {
     let mut stdout = io::stdout();
+    begin_synchronized_update();
 
-    begin_prompt_redraw(&mut stdout, prompt);
-    print_prompt(prompt);
+    let text = parts_text(parts);
+    begin_input_redraw(&mut stdout, input_start_column, previous_cursor_row);
 
     for part in parts {
         let (text, color) = match part {
@@ -104,7 +117,8 @@ pub fn render_highlighted_with_suggestion(
             Highlight::Space(text) => (text, Color::Default),
         };
 
-        print!("{}{}", color.ansi(), text);
+        print!("{}", color.ansi());
+        print_input_text(text);
     }
 
     if let Some(suggestion) = suggestion {
@@ -118,16 +132,19 @@ pub fn render_highlighted_with_suggestion(
 
     // Reset terminal color
     print!("{}", Color::Default.ansi());
+    clear_rendered_tail(&mut stdout);
 
     // Restore cursor position
-    stdout
-        .execute(cursor::MoveToColumn(input_cursor_column(
-            prompt,
-            &parts_text(parts),
-            cursor_position,
-        ) as u16))
-        .unwrap();
+    restore_input_cursor(
+        &mut stdout,
+        &text,
+        cursor_position,
+        suggestion.unwrap_or(""),
+        input_start_column,
+    );
 
+    stdout.flush().unwrap();
+    end_synchronized_update();
     stdout.flush().unwrap();
 }
 
@@ -138,8 +155,17 @@ pub fn render_history_search(
     theme: &Theme,
     query: &str,
     candidate: Option<&str>,
+    input_start_column: usize,
+    previous_cursor_row: usize,
 ) {
-    render_highlighted(prompt, parts, cursor_position, theme);
+    render_highlighted(
+        prompt,
+        parts,
+        cursor_position,
+        theme,
+        input_start_column,
+        previous_cursor_row,
+    );
 
     let mut stdout = io::stdout();
     let (column, _) = cursor::position().unwrap_or((0, 0));
@@ -155,19 +181,24 @@ pub fn render_history_search(
     stdout.flush().unwrap();
 }
 
-pub fn render_plain(prompt: &str, text: &str, cursor_position: usize) {
+pub fn render_plain(
+    _prompt: &str,
+    text: &str,
+    cursor_position: usize,
+    input_start_column: usize,
+    previous_cursor_row: usize,
+) {
     let mut stdout = io::stdout();
+    begin_synchronized_update();
 
-    begin_prompt_redraw(&mut stdout, prompt);
-    print_prompt(prompt);
-    print!("{}", text);
+    begin_input_redraw(&mut stdout, input_start_column, previous_cursor_row);
+    print_input_text(text);
+    clear_rendered_tail(&mut stdout);
 
-    stdout
-        .execute(cursor::MoveToColumn(
-            input_cursor_column(prompt, text, cursor_position) as u16,
-        ))
-        .unwrap();
+    restore_input_cursor(&mut stdout, text, cursor_position, "", input_start_column);
 
+    stdout.flush().unwrap();
+    end_synchronized_update();
     stdout.flush().unwrap();
 }
 
@@ -177,8 +208,17 @@ pub fn render_completions(
     cursor_position: usize,
     theme: &Theme,
     completions: &[String],
+    input_start_column: usize,
+    previous_cursor_row: usize,
 ) {
-    render_highlighted(prompt, parts, cursor_position, theme);
+    render_highlighted(
+        prompt,
+        parts,
+        cursor_position,
+        theme,
+        input_start_column,
+        previous_cursor_row,
+    );
 
     print!("\r\n");
 
@@ -193,7 +233,14 @@ pub fn render_completions(
     print!("\r\n");
 
     // Redraw the input after the completion list.
-    render_highlighted(prompt, parts, cursor_position, theme);
+    render_highlighted(
+        prompt,
+        parts,
+        cursor_position,
+        theme,
+        input_start_column,
+        previous_cursor_row,
+    );
 }
 
 pub fn render_with_completions(
@@ -203,12 +250,22 @@ pub fn render_with_completions(
     theme: &Theme,
     completions: &[String],
     selected_index: Option<usize>,
+    input_start_column: usize,
+    previous_cursor_row: usize,
 ) -> usize {
     let mut stdout = io::stdout();
+    begin_synchronized_update();
 
-    render_input(prompt, parts, cursor_position, theme);
+    render_input(
+        prompt,
+        parts,
+        cursor_position,
+        theme,
+        input_start_column,
+        previous_cursor_row,
+    );
 
-    let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
+    let (terminal_columns, terminal_height) = terminal::size().unwrap_or((80, 24));
 
     let (_, cursor_row) = cursor::position().unwrap_or((0, 0));
 
@@ -217,6 +274,7 @@ pub fn render_with_completions(
     let available_rows = terminal_height.saturating_sub(cursor_row + 2) as usize;
 
     if available_rows == 0 {
+        end_synchronized_update();
         stdout.flush().unwrap();
         return 0;
     }
@@ -228,7 +286,7 @@ pub fn render_with_completions(
         .unwrap_or(1)
         + 4;
 
-    let columns = std::cmp::max(1, terminal_width as usize / column_width);
+    let columns = std::cmp::max(1, terminal_columns as usize / column_width);
 
     let total_rows = completions.len().div_ceil(columns);
 
@@ -237,6 +295,7 @@ pub fn render_with_completions(
     let (scroll_offset, rows) = completion_window(total_rows, available_rows, selected_row);
 
     if rows == 0 {
+        end_synchronized_update();
         stdout.flush().unwrap();
         return 0;
     }
@@ -282,14 +341,18 @@ pub fn render_with_completions(
     // Return to the input line.
     stdout.execute(cursor::MoveUp(rows as u16)).unwrap();
 
+    let text_before_cursor = parts_text(parts)
+        .chars()
+        .take(cursor_position)
+        .collect::<String>();
+    let cursor_column =
+        visual_position_from_column(&text_before_cursor, terminal_width(), input_start_column).1;
     stdout
-        .execute(cursor::MoveToColumn(width::cursor_column(
-            prompt,
-            &parts_text(parts),
-            cursor_position,
-        ) as u16))
+        .execute(cursor::MoveToColumn(cursor_column as u16))
         .unwrap();
 
+    stdout.flush().unwrap();
+    end_synchronized_update();
     stdout.flush().unwrap();
 
     rows
@@ -316,87 +379,175 @@ mod tests {
     }
 }
 
-fn render_input(prompt: &str, parts: &[Highlight], cursor_position: usize, theme: &Theme) {
+fn render_input(
+    _prompt: &str,
+    parts: &[Highlight],
+    cursor_position: usize,
+    theme: &Theme,
+    input_start_column: usize,
+    previous_cursor_row: usize,
+) {
     let mut stdout = io::stdout();
 
-    begin_prompt_redraw(&mut stdout, prompt);
-    print_prompt(prompt);
+    let text = parts_text(parts);
+    begin_input_redraw(&mut stdout, input_start_column, previous_cursor_row);
 
     for part in parts {
         match part {
             Highlight::Command(text) => {
-                print!(
-                    "{}{}",
-                    Color::from_option(&theme.syntax.command).ansi(),
-                    text
-                );
+                print!("{}", Color::from_option(&theme.syntax.command).ansi());
+                print_input_text(text);
             }
 
             Highlight::Argument(text) => {
-                print!(
-                    "{}{}",
-                    Color::from_option(&theme.syntax.argument).ansi(),
-                    text
-                );
+                print!("{}", Color::from_option(&theme.syntax.argument).ansi());
+                print_input_text(text);
             }
 
             Highlight::Operator(text) => {
-                print!(
-                    "{}{}",
-                    Color::from_option(&theme.syntax.operator).ansi(),
-                    text
-                );
+                print!("{}", Color::from_option(&theme.syntax.operator).ansi());
+                print_input_text(text);
             }
 
             Highlight::Error(text) => {
-                print!("{}{}", Color::from_option(&theme.syntax.error).ansi(), text);
+                print!("{}", Color::from_option(&theme.syntax.error).ansi());
+                print_input_text(text);
             }
 
             Highlight::Space(text) => {
-                print!("{}", text);
+                print_input_text(text);
             }
         }
     }
 
     print!("{}", Color::Default.ansi());
+    clear_rendered_tail(&mut stdout);
 
-    stdout
-        .execute(cursor::MoveToColumn(input_cursor_column(
-            prompt,
-            &parts_text(parts),
-            cursor_position,
-        ) as u16))
-        .unwrap();
+    restore_input_cursor(&mut stdout, &text, cursor_position, "", input_start_column);
 
     stdout.flush().unwrap();
 }
 
-fn begin_prompt_redraw(stdout: &mut io::Stdout, prompt: &str) {
-    let prompt_lines = prompt.bytes().filter(|byte| *byte == b'\n').count();
-
-    if prompt_lines > 0 {
+fn begin_input_redraw(
+    stdout: &mut io::Stdout,
+    input_start_column: usize,
+    previous_cursor_row: usize,
+) {
+    if previous_cursor_row > 0 {
         stdout
-            .execute(cursor::MoveUp(prompt_lines.min(u16::MAX as usize) as u16))
+            .execute(cursor::MoveUp(
+                previous_cursor_row.min(u16::MAX as usize) as u16
+            ))
             .unwrap();
     }
 
-    stdout.execute(cursor::MoveToColumn(0)).unwrap();
+    stdout
+        .execute(cursor::MoveToColumn(input_start_column as u16))
+        .unwrap();
+}
+
+fn clear_rendered_tail(stdout: &mut io::Stdout) {
     stdout.execute(Clear(ClearType::FromCursorDown)).unwrap();
 }
 
-fn print_prompt(prompt: &str) {
-    // Raw mode does not translate LF to CRLF, so normalize prompt newlines
-    // to keep every prompt line anchored at column zero.
-    let normalized = prompt.replace("\r\n", "\n").replace('\n', "\r\n");
-    print!("{}", normalized);
+fn begin_synchronized_update() {
+    print!("\x1b[?2026h");
 }
 
-fn input_cursor_column(prompt: &str, text: &str, cursor_position: usize) -> usize {
-    let final_prompt_line = prompt.rsplit('\n').next().unwrap_or(prompt);
-    let final_prompt_line = final_prompt_line
-        .strip_suffix('\r')
-        .unwrap_or(final_prompt_line);
-    width::cursor_column(final_prompt_line, text, cursor_position)
+fn end_synchronized_update() {
+    print!("\x1b[?2026l");
+}
+
+pub fn input_cursor_row(text: &str, cursor_position: usize, input_start_column: usize) -> usize {
+    let text_before_cursor = text.chars().take(cursor_position).collect::<String>();
+    visual_position_from_column(&text_before_cursor, terminal_width(), input_start_column).0
+}
+
+fn print_input_text(text: &str) {
+    print!("{}", normalize_newlines(text));
+}
+
+pub fn render_prompt(prompt: &str) {
+    print!("{}", normalize_newlines(prompt));
+    io::stdout().flush().unwrap();
+}
+
+fn restore_input_cursor(
+    stdout: &mut io::Stdout,
+    text: &str,
+    cursor_position: usize,
+    rendered_suffix: &str,
+    input_start_column: usize,
+) {
+    let text_before_cursor = text.chars().take(cursor_position).collect::<String>();
+    let rendered = format!("{}{}", text, rendered_suffix);
+    let (cursor_row, cursor_column) =
+        visual_position_from_column(&text_before_cursor, terminal_width(), input_start_column);
+    let (rendered_row, _) =
+        visual_position_from_column(&rendered, terminal_width(), input_start_column);
+
+    let rows_up = rendered_row.saturating_sub(cursor_row);
+    if rows_up > 0 {
+        stdout
+            .execute(cursor::MoveUp(rows_up.min(u16::MAX as usize) as u16))
+            .unwrap();
+    }
+    stdout
+        .execute(cursor::MoveToColumn(cursor_column as u16))
+        .unwrap();
+}
+
+fn normalize_newlines(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\n', "\r\n")
+}
+
+fn terminal_width() -> usize {
+    terminal::size()
+        .map(|(columns, _)| columns.max(1) as usize)
+        .unwrap_or(80)
+}
+
+/// Calculates the visual row and column after writing text in a terminal.
+/// The row count includes both explicit newlines and automatic line wrapping.
+fn visual_position_from_column(
+    text: &str,
+    terminal_width: usize,
+    start_column: usize,
+) -> (usize, usize) {
+    let mut row = 0;
+    let mut column = start_column.min(terminal_width.saturating_sub(1));
+    let mut pending_wrap = false;
+
+    for (index, line) in normalize_newlines(text).split('\n').enumerate() {
+        if index > 0 {
+            row += 1;
+            column = 0;
+            pending_wrap = false;
+        }
+
+        let line_width = width::display_width(line.strip_suffix('\r').unwrap_or(line));
+        if line_width == 0 {
+            continue;
+        }
+
+        if pending_wrap {
+            row += 1;
+            column = 0;
+            pending_wrap = false;
+        }
+
+        let end = column + line_width;
+        row += end.saturating_sub(1) / terminal_width;
+        let end_column = end % terminal_width;
+        if end_column == 0 {
+            column = terminal_width - 1;
+            pending_wrap = true;
+        } else {
+            column = end_column;
+        }
+    }
+
+    (row, column)
 }
 
 fn parts_text(parts: &[Highlight]) -> String {

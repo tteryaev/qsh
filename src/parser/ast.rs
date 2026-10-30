@@ -29,6 +29,11 @@ pub enum Statement {
     And(Box<Statement>, Box<Statement>),
 
     Or(Box<Statement>, Box<Statement>),
+
+    If {
+        branches: Vec<(Statement, Statement)>,
+        else_branch: Option<Box<Statement>>,
+    },
 }
 
 #[derive(Debug, Clone)]

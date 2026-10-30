@@ -39,5 +39,20 @@ pub fn execute(statement: Statement, plugins: &PluginManager) -> bool {
                 execute(*right, plugins)
             }
         }
+
+        Statement::If {
+            branches,
+            else_branch,
+        } => {
+            for (condition, body) in branches {
+                if execute(condition, plugins) {
+                    return execute(body, plugins);
+                }
+            }
+
+            else_branch
+                .map(|branch| execute(*branch, plugins))
+                .unwrap_or(false)
+        }
     }
 }
